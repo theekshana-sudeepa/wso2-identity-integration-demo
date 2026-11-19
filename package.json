@@ -1,0 +1,44 @@
+{
+  "name": "wso2-identity-integration-demo",
+  "version": "1.0.0",
+  "description": "Enterprise-grade reference integration demo for WSO2 Identity Server & Asgardeo CIAM featuring OIDC PKCE authentication, RS256 JWKS token validation, and RBAC enforcement.",
+  "author": "Theekshana Sudeepa",
+  "license": "MIT",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:frontend": "npm --prefix frontend run build",
+    "start:backend": "npm --prefix backend start",
+    "docker:up": "docker compose -f docker/docker-compose.yml up -d",
+    "docker:down": "docker compose -f docker/docker-compose.yml down",
+    "test:build": "npm --prefix frontend run build"
+  },
+  "keywords": [
+    "wso2",
+    "wso2-identity-server",
+    "asgardeo",
+    "ciam",
+    "oauth2",
+    "oidc",
+    "pkce",
+    "jwt",
+    "jwks",
+    "rbac",
+    "react",
+    "express",
+    "docker"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/theekshana-sudeepa/wso2-identity-integration-demo.git"
+  },
+  "bugs": {
+    "url": "https://github.com/theekshana-sudeepa/wso2-identity-integration-demo/issues"
+  },
+  "homepage": "https://github.com/theekshana-sudeepa/wso2-identity-integration-demo#readme"
+}

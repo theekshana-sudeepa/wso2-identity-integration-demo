@@ -1,0 +1,21 @@
+{
+  "name": "wso2-identity-demo-backend",
+  "version": "1.0.0",
+  "description": "Stateless Express Resource Server validating WSO2 Identity Server / Asgardeo RS256 JWTs via JWKS and enforcing RBAC scopes.",
+  "main": "src/server.js",
+  "author": "Theekshana Sudeepa",
+  "license": "MIT",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "check": "node --check src/server.js && node --check src/config/identityConfig.js && node --check src/middleware/authMiddleware.js && node --check src/middleware/rbacMiddleware.js && node --check src/routes/apiRoutes.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "helmet": "^8.0.0",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0"
+  }
+}

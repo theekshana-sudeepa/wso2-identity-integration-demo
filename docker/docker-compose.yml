@@ -1,0 +1,21 @@
+services:
+  wso2is:
+    image: wso2/wso2is:7.0.0
+    container_name: wso2-identity-server
+    restart: unless-stopped
+    ports:
+      - "9443:9443"
+    environment:
+      - JAVA_OPTS=-Xms512m -Xmx1024m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -k -f https://localhost:9443/api/health-check/v1.0/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - identity-net
+
+networks:
+  identity-net:
+    driver: bridge
