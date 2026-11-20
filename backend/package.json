@@ -1,14 +1,17 @@
 {
   "name": "wso2-identity-demo-backend",
-  "version": "1.0.0",
-  "description": "Stateless Express Resource Server validating WSO2 Identity Server / Asgardeo RS256 JWTs via JWKS and enforcing RBAC scopes.",
-  "main": "src/server.js",
+  "version": "1.1.0",
+  "description": "Stateless Express + strict TypeScript Resource Server validating Choreo Labs (formerly WSO2) Identity Server 7.0 & Asgardeo RS256 JWTs via JWKS and enforcing RBAC scopes.",
+  "main": "dist/server.js",
   "author": "Theekshana Sudeepa",
   "license": "MIT",
   "scripts": {
-    "start": "node src/server.js",
-    "dev": "node --watch src/server.js",
-    "check": "node --check src/server.js && node --check src/config/identityConfig.js && node --check src/middleware/authMiddleware.js && node --check src/middleware/rbacMiddleware.js && node --check src/routes/apiRoutes.js"
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "check": "npm run typecheck && npm run lint && npm run build"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -17,5 +20,17 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.22.0",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/jsonwebtoken": "^9.0.9",
+    "@types/node": "^22.13.10",
+    "eslint": "^9.22.0",
+    "globals": "^16.0.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "typescript-eslint": "^8.26.1"
   }
 }
