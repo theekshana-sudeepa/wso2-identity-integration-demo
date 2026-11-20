@@ -1,32 +1,105 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Moon, ShieldCheck, Sun } from "lucide-react";
+import { ApiTestBench } from "./components/ApiTestBench";
+import { AuthSessionCard } from "./components/AuthSessionCard";
+import { JwtClaimsInspector } from "./components/JwtClaimsInspector";
+import { OidcFlowVisualizer } from "./components/OidcFlowVisualizer";
 import {
-  ShieldCheck,
-  KeyRound,
-  LogOut,
-  Terminal,
-  UserCheck,
-  Lock,
-  Sparkles,
-  Server
-} from "lucide-react";
+  checkBackendHealth,
+  invokeProtectedApi,
+  simulateRbacPolicyCall,
+  type ApiCallResult,
+  type ApiEndpointSpec,
+  type BackendHealthStatus,
+  type ExecutionMode
+} from "./lib/apiClient";
 import {
   clearSession,
   createDemoSession,
   decodeJwt,
+  generateLivePkceTelemetry,
+  getInitialPreset,
   getOidcConfig,
   handleOidcCallback,
   initiateWso2Login,
   loadSession,
+  parseJwtClaims,
+  type IdpPreset,
+  type PkceTelemetry,
   type TokenSession
 } from "./lib/pkce";
-import { invokeProtectedApi, type ApiCallResult } from "./lib/apiClient";
+
+type ThemeMode = "dark" | "light";
+const THEME_STORAGE_KEY = "wso2_console_theme";
+
+function getInitialTheme(): ThemeMode {
+  try {
+    const saved = localStorage.getItem(THEME_STORAGE_KEY);
+    if (saved === "light" || saved === "dark") {
+      return saved;
+    }
+  } catch {
+    // Ignore storage access errors in restricted environments
+  }
+  return "dark";
+}
 
 export function App() {
-  const config = useMemo(() => getOidcConfig(), []);
+  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
+  const [preset, setPreset] = useState<IdpPreset>(() => loadSession()?.preset ?? getInitialPreset());
+  const config = useMemo(() => getOidcConfig(preset), [preset]);
+
   const [session, setSession] = useState<TokenSession | null>(() => loadSession());
   const [authError, setAuthError] = useState<string | null>(null);
+  const [pkceTelemetry, setPkceTelemetry] = useState<PkceTelemetry | null>(null);
+  const [executionMode, setExecutionMode] = useState<ExecutionMode>("live");
   const [apiResult, setApiResult] = useState<ApiCallResult | null>(null);
   const [loadingEndpoint, setLoadingEndpoint] = useState<string | null>(null);
+  const [backendHealth, setBackendHealth] = useState<BackendHealthStatus>({
+    reachable: false,
+    statusText: "Checking API..."
+  });
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", theme);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Ignore storage errors
+    }
+  }, [theme]);
+
+  const regeneratePkce = useCallback(async () => {
+    const fresh = await generateLivePkceTelemetry();
+    setPkceTelemetry(fresh);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    generateLivePkceTelemetry()
+      .then((fresh) => {
+        if (active) setPkceTelemetry(fresh);
+      })
+      .catch(() => {
+        // Web Crypto fallback ignored if unavailable
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    checkBackendHealth(config.backendApiUrl).then((status) => {
+      if (active) {
+        setBackendHealth(status);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [config.backendApiUrl]);
 
   useEffect(() => {
     let active = true;
@@ -52,12 +125,25 @@ export function App() {
     return session ? decodeJwt(session.accessToken) : null;
   }, [session]);
 
+  const claims = useMemo(() => {
+    return decoded ? parseJwtClaims(decoded) : null;
+  }, [decoded]);
+
+  function handleSelectPreset(nextPreset: IdpPreset) {
+    setPreset(nextPreset);
+    setAuthError(null);
+    if (session?.mode === "demo" && session.demoRole) {
+      const refreshed = createDemoSession(session.demoRole, getOidcConfig(nextPreset));
+      setSession(refreshed);
+    }
+  }
+
   async function onLiveLogin() {
     setAuthError(null);
     try {
       await initiateWso2Login(config);
     } catch (err: unknown) {
-      setAuthError(err instanceof Error ? err.message : "Unable to initiate WSO2 login.");
+      setAuthError(err instanceof Error ? err.message : "Unable to initiate OIDC login.");
     }
   }
 
@@ -74,208 +160,111 @@ export function App() {
     setAuthError(null);
   }
 
-  async function runApiTest(
-    endpoint: string,
-    method: "GET" | "POST",
-    body?: Record<string, unknown>
-  ) {
-    setLoadingEndpoint(endpoint);
-    const result = await invokeProtectedApi(
-      config.backendApiUrl,
-      endpoint,
-      method,
-      session?.accessToken,
-      body
-    );
-    setApiResult(result);
-    setLoadingEndpoint(null);
+  async function handleInvokeEndpoint(spec: ApiEndpointSpec) {
+    setLoadingEndpoint(spec.path);
+    try {
+      if (executionMode === "dry-run") {
+        const simulated = simulateRbacPolicyCall(spec, config, session, claims);
+        setApiResult(simulated);
+      } else {
+        const liveResult = await invokeProtectedApi(
+          config.backendApiUrl,
+          spec.path,
+          spec.method,
+          session?.accessToken,
+          spec.defaultBody
+        );
+        setApiResult(liveResult);
+      }
+    } finally {
+      setLoadingEndpoint(null);
+    }
   }
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-icon">
-            <ShieldCheck size={22} />
-          </div>
-          <div>
-            <h1>WSO2 Identity Integration Console</h1>
-            <p>OAuth 2.0 + OIDC PKCE Public Client &amp; RS256 JWKS Resource Server</p>
-          </div>
-        </div>
-
-        <div className="status-pill">
-          <span className={`status-dot ${session ? "dot-active" : "dot-idle"}`} />
-          {session
-            ? session.mode === "live"
-              ? "Authenticated (WSO2 Live)"
-              : "Authenticated (Demo Simulation)"
-            : "Unauthenticated"}
-        </div>
-      </header>
-
-      <section className="grid-2">
-        <article className="card">
-          <div className="card-header">
-            <div className="card-title">
-              <KeyRound size={18} />
-              <span>Authentication &amp; PKCE Flow</span>
+    <div className="app-backdrop">
+      <div className="app-shell">
+        <header className="topbar">
+          <div className="brand">
+            <div className="brand-icon">
+              <ShieldCheck size={20} />
+            </div>
+            <div>
+              <div className="brand-title-row">
+                <h1>WSO2 Identity Integration Console</h1>
+                <span className="brand-tag">Choreo Labs · IS 7.0 &amp; Asgardeo</span>
+              </div>
+              <p>OAuth 2.0 OIDC PKCE (S256) Public Client · Stateless RS256 JWKS · RBAC Guard</p>
             </div>
           </div>
-          <p className="card-subtitle">
-            Authenticate via WSO2 Identity Server / Asgardeo using Authorization Code Flow with
-            S256 PKCE, or load a simulated RS256 session to inspect JWT claims.
-          </p>
 
-          <div className="meta-kv">
-            <span className="meta-label">Identity Provider</span>
-            <span className="meta-value">{config.baseUrl}</span>
-            <span className="meta-label">Redirect URI</span>
-            <span className="meta-value">{config.redirectUri}</span>
-            <span className="meta-label">Resource API</span>
-            <span className="meta-value">{config.backendApiUrl}</span>
-          </div>
+          <div className="topbar-right">
+            <div className="status-pill">
+              <span className={`status-dot ${session ? "dot-active" : "dot-idle"}`} />
+              <span>
+                {session
+                  ? session.mode === "live"
+                    ? "Authenticated · Live OIDC"
+                    : `Demo · ${session.demoRole === "admin" ? "Admin" : "Developer"}`
+                  : "Unauthenticated"}
+              </span>
+            </div>
 
-          <div className="btn-row">
-            <button type="button" className="btn btn-primary" onClick={onLiveLogin}>
-              <Lock size={15} />
-              Sign in with WSO2 IS
+            <button
+              type="button"
+              className="theme-toggle"
+              onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}
+              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+              title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+            >
+              {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+              <span>{theme === "dark" ? "Light" : "Dark"}</span>
             </button>
-            <button type="button" className="btn" onClick={() => onDemoLogin("user")}>
-              <Sparkles size={15} />
-              Demo User Token
-            </button>
-            <button type="button" className="btn" onClick={() => onDemoLogin("admin")}>
-              <UserCheck size={15} />
-              Demo Admin Token
-            </button>
-            {session && (
-              <button type="button" className="btn btn-danger" onClick={onLogout}>
-                <LogOut size={15} />
-                Sign Out
-              </button>
-            )}
           </div>
+        </header>
 
-          {authError && <div className="alert">{authError}</div>}
-        </article>
+        <main className="main-stack">
+          <OidcFlowVisualizer
+            config={config}
+            session={session}
+            claims={claims}
+            pkceTelemetry={pkceTelemetry}
+            lastApiResult={apiResult}
+            onRegeneratePkce={regeneratePkce}
+          />
 
-        <article className="card">
-          <div className="card-header">
-            <div className="card-title">
-              <Terminal size={18} />
-              <span>Decoded JWT Claims Inspector</span>
-            </div>
-          </div>
-          <p className="card-subtitle">
-            Real-time inspection of the active Bearer token header and verified identity claims.
-          </p>
+          <section className="grid-2">
+            <AuthSessionCard
+              config={config}
+              session={session}
+              authError={authError}
+              onSelectPreset={handleSelectPreset}
+              onLiveLogin={onLiveLogin}
+              onDemoLogin={onDemoLogin}
+              onLogout={onLogout}
+            />
 
-          <pre className="code-block">
-            {decoded
-              ? JSON.stringify(decoded, null, 2)
-              : "// No active JWT session.\n// Sign in with WSO2 Identity Server or load a Demo Token."}
-          </pre>
-        </article>
-      </section>
+            <JwtClaimsInspector decoded={decoded} claims={claims} />
+          </section>
 
-      <section className="card">
-        <div className="card-header">
-          <div className="card-title">
-            <Server size={18} />
-            <span>Protected Resource Server Test Bench</span>
-          </div>
-        </div>
-        <p className="card-subtitle">
-          Invoke Express backend endpoints to verify RS256 JWKS validation, role-based access
-          control (RBAC), and OAuth 2.0 scope enforcement.
-        </p>
+          <ApiTestBench
+            executionMode={executionMode}
+            backendHealth={backendHealth}
+            loadingEndpoint={loadingEndpoint}
+            apiResult={apiResult}
+            onChangeMode={setExecutionMode}
+            onInvoke={handleInvokeEndpoint}
+          />
+        </main>
 
-        <div className="grid-2" style={{ marginBottom: 0 }}>
-          <div className="endpoint-list">
-            <div className="endpoint-row">
-              <div className="endpoint-meta">
-                <span className="badge badge-get">GET</span>
-                <span>/api/v1/public/info</span>
-              </div>
-              <button
-                type="button"
-                className="btn"
-                disabled={loadingEndpoint !== null}
-                onClick={() => runApiTest("/api/v1/public/info", "GET")}
-              >
-                Test Public
-              </button>
-            </div>
-
-            <div className="endpoint-row">
-              <div className="endpoint-meta">
-                <span className="badge badge-get">GET</span>
-                <span>/api/v1/user/profile</span>
-              </div>
-              <button
-                type="button"
-                className="btn"
-                disabled={loadingEndpoint !== null}
-                onClick={() => runApiTest("/api/v1/user/profile", "GET")}
-              >
-                Test User Auth
-              </button>
-            </div>
-
-            <div className="endpoint-row">
-              <div className="endpoint-meta">
-                <span className="badge badge-get">GET</span>
-                <span>/api/v1/admin/audit-logs</span>
-              </div>
-              <button
-                type="button"
-                className="btn"
-                disabled={loadingEndpoint !== null}
-                onClick={() => runApiTest("/api/v1/admin/audit-logs", "GET")}
-              >
-                Test Admin RBAC
-              </button>
-            </div>
-
-            <div className="endpoint-row">
-              <div className="endpoint-meta">
-                <span className="badge badge-post">POST</span>
-                <span>/api/v1/reports</span>
-              </div>
-              <button
-                type="button"
-                className="btn"
-                disabled={loadingEndpoint !== null}
-                onClick={() =>
-                  runApiTest("/api/v1/reports", "POST", {
-                    title: "Quarterly Zero-Trust Audit"
-                  })
-                }
-              >
-                Test Write Scope
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <pre className="code-block" style={{ minHeight: "235px" }}>
-              {apiResult
-                ? JSON.stringify(
-                    {
-                      endpoint: `${apiResult.method} ${apiResult.endpoint}`,
-                      httpStatus: apiResult.status,
-                      latencyMs: apiResult.latencyMs,
-                      body: apiResult.data
-                    },
-                    null,
-                    2
-                  )
-                : "// Click any endpoint to inspect HTTP status, latency, and JSON payload."}
-            </pre>
-          </div>
-        </div>
-      </section>
+        <footer className="app-footer">
+          <span>
+            Choreo Labs (formerly WSO2) CIAM Reference Architecture · React 19 + Strict TypeScript +
+            Express RS256 JWKS
+          </span>
+          <span>RFC 7636 PKCE (S256) · OIDC Core 1.0 · MIT License</span>
+        </footer>
+      </div>
     </div>
   );
 }

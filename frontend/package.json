@@ -1,14 +1,17 @@
 {
   "name": "wso2-identity-demo-frontend",
-  "version": "1.0.0",
-  "description": "React + TypeScript SPA Public Client demonstrating WSO2 Identity Server / Asgardeo OIDC PKCE authentication, JWT inspection, and RBAC API testing.",
+  "version": "1.1.0",
+  "description": "React + strict TypeScript SPA Public Client & Interactive OIDC PKCE/JWKS Flow Visualizer for Choreo Labs (formerly WSO2) Identity Server 7.0 & Asgardeo.",
   "author": "Theekshana Sudeepa",
   "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
     "build": "tsc -b && vite build",
+    "check": "npm run typecheck && npm run lint && npm run build",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -17,10 +20,16 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^10.15.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.8",
+    "globals": "^17.14.0",
     "typescript": "^5.7.2",
+    "typescript-eslint": "^8.73.0",
     "vite": "^6.0.7"
   }
 }
