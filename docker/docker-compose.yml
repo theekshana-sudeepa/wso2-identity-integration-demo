@@ -1,14 +1,21 @@
+# Choreo Labs (formerly WSO2) — WSO2 Identity Server 7.0 Local Orchestration
+# Usage:
+#   docker compose -f docker/docker-compose.yml up -d
+#   Console: https://localhost:9443/console
+# Note: For Asgardeo Cloud SaaS, Docker is not required; point .env to
+#       https://api.asgardeo.io/t/<your-organization>
+
 services:
   wso2is:
-    image: wso2/wso2is:7.0.0
+    image: ${WSO2_IS_IMAGE:-wso2/wso2is:7.0.0}
     container_name: wso2-identity-server
     restart: unless-stopped
     ports:
-      - "9443:9443"
+      - "${WSO2_IS_PORT:-9443}:9443"
     environment:
-      - JAVA_OPTS=-Xms512m -Xmx1024m
+      JAVA_OPTS: "${WSO2_IS_JAVA_OPTS:--Xms512m -Xmx1024m}"
     healthcheck:
-      test: ["CMD-SHELL", "curl -k -f https://localhost:9443/api/health-check/v1.0/health || exit 1"]
+      test: ["CMD-SHELL", "curl -k -fsS https://localhost:9443/api/health-check/v1.0/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 10

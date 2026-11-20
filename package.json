@@ -1,7 +1,7 @@
 {
   "name": "wso2-identity-integration-demo",
-  "version": "1.0.0",
-  "description": "Enterprise-grade reference integration demo for WSO2 Identity Server & Asgardeo CIAM featuring OIDC PKCE authentication, RS256 JWKS token validation, and RBAC enforcement.",
+  "version": "1.1.0",
+  "description": "Flagship full-stack CIAM & OIDC PKCE visual showcase for Choreo Labs (formerly WSO2) — WSO2 Identity Server 7.0 & Asgardeo, featuring an interactive PKCE/JWKS flow visualizer, RS256 verification, and RBAC enforcement.",
   "author": "Theekshana Sudeepa",
   "license": "MIT",
   "private": true,
@@ -12,13 +12,19 @@
   "scripts": {
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
+    "build:backend": "npm --prefix backend run build",
     "build:frontend": "npm --prefix frontend run build",
+    "build": "npm run build:backend && npm run build:frontend",
+    "typecheck": "npm --prefix backend run typecheck && npm --prefix frontend run typecheck",
+    "lint": "npm --prefix backend run lint && npm --prefix frontend run lint",
+    "check": "npm run typecheck && npm run lint && npm run build",
     "start:backend": "npm --prefix backend start",
     "docker:up": "docker compose -f docker/docker-compose.yml up -d",
     "docker:down": "docker compose -f docker/docker-compose.yml down",
-    "test:build": "npm --prefix frontend run build"
+    "test:build": "npm run check"
   },
   "keywords": [
+    "choreo-labs",
     "wso2",
     "wso2-identity-server",
     "asgardeo",
@@ -30,6 +36,7 @@
     "jwks",
     "rbac",
     "react",
+    "typescript",
     "express",
     "docker"
   ],
