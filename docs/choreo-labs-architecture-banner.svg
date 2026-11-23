@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 420" role="img" aria-label="Choreo Labs WSO2 Identity Integration Console 6-Stage Architecture Banner">
+  <defs>
+    <linearGradient id="bg-grad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#090C12" />
+      <stop offset="55%" stop-color="#0F1522" />
+      <stop offset="100%" stop-color="#0B0E14" />
+    </linearGradient>
+    <radialGradient id="glow-orange" cx="25%" cy="15%" r="55%">
+      <stop offset="0%" stop-color="#FF7300" stop-opacity="0.22" />
+      <stop offset="100%" stop-color="#FF7300" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="glow-violet" cx="85%" cy="80%" r="48%">
+      <stop offset="0%" stop-color="#A78BFA" stop-opacity="0.2" />
+      <stop offset="100%" stop-color="#A78BFA" stop-opacity="0" />
+    </radialGradient>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <circle cx="2" cy="2" r="1" fill="#94A3B8" fill-opacity="0.16" />
+    </pattern>
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#FF7300" />
+    </marker>
+    <marker id="arrow-violet" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M 0 1.5 L 9 5 L 0 8.5 z" fill="#A78BFA" />
+    </marker>
+  </defs>
+
+  <rect width="1280" height="420" rx="18" fill="url(#bg-grad)" />
+  <rect width="1280" height="420" rx="18" fill="url(#glow-orange)" />
+  <rect width="1280" height="420" rx="18" fill="url(#glow-violet)" />
+  <rect width="1280" height="420" rx="18" fill="url(#grid)" />
+  <rect x="1" y="1" width="1278" height="418" rx="17" fill="none" stroke="#334155" stroke-opacity="0.55" />
+
+  <!-- Top Eyebrow -->
+  <rect x="44" y="34" width="330" height="28" rx="14" fill="#FF7300" fill-opacity="0.14" stroke="#FF7300" stroke-opacity="0.4" />
+  <text x="209" y="52.5" text-anchor="middle" font-family="Inter, -apple-system, sans-serif" font-size="11.5" font-weight="700" fill="#FF851F" letter-spacing="0.8">CHOREO LABS (FORMERLY WSO2) · 2026 REFERENCE</text>
+
+  <rect x="932" y="34" width="304" height="28" rx="14" fill="#A78BFA" fill-opacity="0.14" stroke="#A78BFA" stroke-opacity="0.42" />
+  <text x="1084" y="52.5" text-anchor="middle" font-family="JetBrains Mono, ui-monospace, monospace" font-size="11" font-weight="600" fill="#C4B5FD">RFC 7636 · RFC 8725 · RFC 8693 OBO + MCP</text>
+
+  <!-- Title -->
+  <text x="44" y="102" font-family="Inter, -apple-system, sans-serif" font-size="30" font-weight="700" fill="#F8FAFC" letter-spacing="-0.6">WSO2 Identity Integration Console &amp; AI Agent Delegation Lab</text>
+  <text x="44" y="130" font-family="Inter, -apple-system, sans-serif" font-size="14.5" fill="#94A3B8">Interactive 5-Stage CIAM PKCE + 6th-Stage RFC 8693 AI Agent MCP Guard · Break-the-Flow Attack Lab · Zero-Config Browser Simulation</text>
+
+  <!-- 6-Stage Pipeline -->
+  <!-- Stage 01 -->
+  <g transform="translate(44, 174)">
+    <rect width="174" height="114" rx="12" fill="#10151F" stroke="#334155" stroke-width="1.3" />
+    <rect x="12" y="12" width="30" height="20" rx="6" fill="#FF7300" fill-opacity="0.16" />
+    <text x="27" y="25.5" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" font-weight="700" fill="#FF851F">01</text>
+    <circle cx="158" cy="22" r="4" fill="#10B981" />
+    <text x="12" y="54" font-family="Inter, sans-serif" font-size="13" font-weight="650" fill="#F1F5F9">React Public SPA</text>
+    <text x="12" y="72" font-family="Inter, sans-serif" font-size="10.5" fill="#94A3B8">Zero Client Secret</text>
+    <rect x="12" y="84" width="150" height="18" rx="5" fill="#080B10" />
+    <text x="20" y="96.5" font-family="JetBrains Mono, monospace" font-size="9.2" font-weight="600" fill="#10B981">OAUTH 2.0 PUBLIC</text>
+  </g>
+  <line x1="222" y1="231" x2="246" y2="231" stroke="#FF7300" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arrow-orange)" />
+
+  <!-- Stage 02 -->
+  <g transform="translate(252, 174)">
+    <rect width="174" height="114" rx="12" fill="#10151F" stroke="#FF7300" stroke-width="1.5" />
+    <rect x="12" y="12" width="30" height="20" rx="6" fill="#FF7300" fill-opacity="0.16" />
+    <text x="27" y="25.5" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" font-weight="700" fill="#FF851F">02</text>
+    <circle cx="158" cy="22" r="4" fill="#10B981" />
+    <text x="12" y="54" font-family="Inter, sans-serif" font-size="13" font-weight="650" fill="#F1F5F9">Web Crypto PKCE</text>
+    <text x="12" y="72" font-family="Inter, sans-serif" font-size="10.5" fill="#94A3B8">384-bit S256 · State</text>
+    <rect x="12" y="84" width="150" height="18" rx="5" fill="#080B10" />
+    <text x="20" y="96.5" font-family="JetBrains Mono, monospace" font-size="9.2" font-weight="600" fill="#10B981">RFC 7636 VERIFIED</text>
+  </g>
+  <line x1="430" y1="231" x2="454" y2="231" stroke="#FF7300" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arrow-orange)" />
+
+  <!-- Stage 03 -->
+  <g transform="translate(460, 174)">
+    <rect width="174" height="114" rx="12" fill="#10151F" stroke="#334155" stroke-width="1.3" />
+    <rect x="12" y="12" width="30" height="20" rx="6" fill="#FF7300" fill-opacity="0.16" />
+    <text x="27" y="25.5" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" font-weight="700" fill="#FF851F">03</text>
+    <circle cx="158" cy="22" r="4" fill="#10B981" />
+    <text x="12" y="54" font-family="Inter, sans-serif" font-size="13" font-weight="650" fill="#F1F5F9">WSO2 IS / Asgardeo</text>
+    <text x="12" y="72" font-family="Inter, sans-serif" font-size="10.5" fill="#94A3B8">OIDC Token &amp; JWKS</text>
+    <rect x="12" y="84" width="150" height="18" rx="5" fill="#080B10" />
+    <text x="20" y="96.5" font-family="JetBrains Mono, monospace" font-size="9.2" font-weight="600" fill="#38BDF8">RS256 KEY SET</text>
+  </g>
+  <line x1="638" y1="231" x2="662" y2="231" stroke="#FF7300" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arrow-orange)" />
+
+  <!-- Stage 04 -->
+  <g transform="translate(668, 174)">
+    <rect width="174" height="114" rx="12" fill="#10151F" stroke="#334155" stroke-width="1.3" />
+    <rect x="12" y="12" width="30" height="20" rx="6" fill="#FF7300" fill-opacity="0.16" />
+    <text x="27" y="25.5" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" font-weight="700" fill="#FF851F">04</text>
+    <circle cx="158" cy="22" r="4" fill="#F43F5E" />
+    <text x="12" y="54" font-family="Inter, sans-serif" font-size="13" font-weight="650" fill="#F1F5F9">Stateless RS256</text>
+    <text x="12" y="72" font-family="Inter, sans-serif" font-size="10.5" fill="#94A3B8">JWKS LRU · Alg Pin</text>
+    <rect x="12" y="84" width="150" height="18" rx="5" fill="#080B10" />
+    <text x="20" y="96.5" font-family="JetBrains Mono, monospace" font-size="9.2" font-weight="600" fill="#F43F5E">ATTACK LAB GUARD</text>
+  </g>
+  <line x1="846" y1="231" x2="870" y2="231" stroke="#FF7300" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arrow-orange)" />
+
+  <!-- Stage 05 -->
+  <g transform="translate(876, 174)">
+    <rect width="174" height="114" rx="12" fill="#10151F" stroke="#334155" stroke-width="1.3" />
+    <rect x="12" y="12" width="30" height="20" rx="6" fill="#FF7300" fill-opacity="0.16" />
+    <text x="27" y="25.5" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" font-weight="700" fill="#FF851F">05</text>
+    <circle cx="158" cy="22" r="4" fill="#10B981" />
+    <text x="12" y="54" font-family="Inter, sans-serif" font-size="13" font-weight="650" fill="#F1F5F9">RBAC Express API</text>
+    <text x="12" y="72" font-family="Inter, sans-serif" font-size="10.5" fill="#94A3B8">Groups &amp; Scopes</text>
+    <rect x="12" y="84" width="150" height="18" rx="5" fill="#080B10" />
+    <text x="20" y="96.5" font-family="JetBrains Mono, monospace" font-size="9.2" font-weight="600" fill="#10B981">LEAST PRIVILEGE</text>
+  </g>
+  <line x1="1054" y1="231" x2="1078" y2="231" stroke="#A78BFA" stroke-width="2" stroke-dasharray="5 3" marker-end="url(#arrow-violet)" />
+
+  <!-- Stage 06 -->
+  <g transform="translate(1084, 174)">
+    <rect width="152" height="114" rx="12" fill="#16142A" stroke="#A78BFA" stroke-width="1.6" />
+    <rect x="12" y="12" width="30" height="20" rx="6" fill="#A78BFA" fill-opacity="0.2" />
+    <text x="27" y="25.5" text-anchor="middle" font-family="JetBrains Mono, monospace" font-size="10.5" font-weight="700" fill="#C4B5FD">06</text>
+    <circle cx="136" cy="22" r="4" fill="#A78BFA" />
+    <text x="12" y="54" font-family="Inter, sans-serif" font-size="12.5" font-weight="650" fill="#F1F5F9">AI Agent -> MCP</text>
+    <text x="12" y="72" font-family="Inter, sans-serif" font-size="10.2" fill="#C4B5FD">RFC 8693 · 60s TTL</text>
+    <rect x="12" y="84" width="128" height="18" rx="5" fill="#080B10" />
+    <text x="18" y="96.5" font-family="JetBrains Mono, monospace" font-size="9" font-weight="600" fill="#C4B5FD">OBO + ACT GUARD</text>
+  </g>
+
+  <!-- Bottom Feature Pills -->
+  <g transform="translate(44, 330)">
+    <rect width="286" height="48" rx="10" fill="#10151F" stroke="#1E293B" />
+    <text x="16" y="21" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700" fill="#F43F5E">6-SCENARIO ATTACK LAB</text>
+    <text x="16" y="38" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">PKCE · CSRF · alg:none/HS256 · kid · aud/iss · exp</text>
+  </g>
+
+  <g transform="translate(346, 330)">
+    <rect width="286" height="48" rx="10" fill="#10151F" stroke="#1E293B" />
+    <text x="16" y="21" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700" fill="#C4B5FD">AI AGENT MCP DELEGATION</text>
+    <text x="16" y="38" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">POST /api/mcp/tools/call · act.sub · scope subset</text>
+  </g>
+
+  <g transform="translate(648, 330)">
+    <rect width="286" height="48" rx="10" fill="#10151F" stroke="#1E293B" />
+    <text x="16" y="21" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700" fill="#38BDF8">DEVELOPER ERGONOMICS</text>
+    <text x="16" y="38" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">Cmd+K Palette · curl/TS/OIDC Exporter · ARIA</text>
+  </g>
+
+  <g transform="translate(950, 330)">
+    <rect width="286" height="48" rx="10" fill="#10151F" stroke="#1E293B" />
+    <text x="16" y="21" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700" fill="#10B981">STRICT TS + VITEST SUITE</text>
+    <text x="16" y="38" font-family="Inter, sans-serif" font-size="11" fill="#94A3B8">Zero any · Browser Simulation · Crypto Tests</text>
+  </g>
+</svg>

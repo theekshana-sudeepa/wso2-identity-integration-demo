@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { memo, useMemo, useState, type ReactNode } from "react";
 import { Check, Copy } from "lucide-react";
 
 interface JsonHighlighterProps {
@@ -47,7 +47,7 @@ function highlightJsonLine(line: string, lineIndex: number): ReactNode[] {
   return nodes;
 }
 
-export function JsonHighlighter({
+export const JsonHighlighter = memo(function JsonHighlighter({
   data,
   emptyMessage = "// Waiting for live protocol payload...",
   maxHeight = 320,
@@ -55,7 +55,20 @@ export function JsonHighlighter({
 }: JsonHighlighterProps) {
   const [copied, setCopied] = useState(false);
 
-  const formatted = data !== null && data !== undefined ? JSON.stringify(data, null, 2) : null;
+  const formatted = useMemo(
+    () => (data !== null && data !== undefined ? JSON.stringify(data, null, 2) : null),
+    [data]
+  );
+
+  const highlightedLines = useMemo(() => {
+    if (!formatted) return null;
+    return formatted.split("\n").map((line, index) => (
+      <span key={index} className="code-line">
+        {highlightJsonLine(line, index)}
+        {"\n"}
+      </span>
+    ));
+  }, [formatted]);
 
   async function handleCopy() {
     if (!formatted) return;
@@ -83,17 +96,8 @@ export function JsonHighlighter({
         </button>
       )}
       <pre className="code-block" style={{ maxHeight: `${maxHeight}px` }}>
-        {formatted ? (
-          formatted.split("\n").map((line, index) => (
-            <span key={index} className="code-line">
-              {highlightJsonLine(line, index)}
-              {"\n"}
-            </span>
-          ))
-        ) : (
-          <span className="code-muted">{emptyMessage}</span>
-        )}
+        {highlightedLines ?? <span className="code-muted">{emptyMessage}</span>}
       </pre>
     </div>
   );
-}
+});

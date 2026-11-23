@@ -1,4 +1,5 @@
-import { Activity, Play, Server, ShieldCheck } from "lucide-react";
+import { memo } from "react";
+import { Activity, Play, Server, ShieldAlert, ShieldCheck, Zap } from "lucide-react";
 import {
   API_ENDPOINTS,
   type ApiCallResult,
@@ -6,6 +7,7 @@ import {
   type BackendHealthStatus,
   type ExecutionMode
 } from "../lib/apiClient";
+import type { FaultEvaluation } from "../lib/securityLab";
 import { JsonHighlighter } from "./JsonHighlighter";
 
 interface ApiTestBenchProps {
@@ -13,6 +15,7 @@ interface ApiTestBenchProps {
   readonly backendHealth: BackendHealthStatus;
   readonly loadingEndpoint: string | null;
   readonly apiResult: ApiCallResult | null;
+  readonly faultEval: FaultEvaluation;
   readonly onChangeMode: (mode: ExecutionMode) => void;
   readonly onInvoke: (spec: ApiEndpointSpec) => Promise<void>;
 }
@@ -20,7 +23,7 @@ interface ApiTestBenchProps {
 function getStatusBadgeClass(status: number): string {
   if (status >= 200 && status < 300) return "http-2xx";
   if (status === 401) return "http-401";
-  if (status === 403) return "http-403";
+  if (status === 403 || status === 400) return "http-403";
   return "http-err";
 }
 
@@ -30,6 +33,8 @@ function getStatusText(status: number): string {
       return "200 OK";
     case 201:
       return "201 Created";
+    case 400:
+      return "400 Bad Request";
     case 401:
       return "401 Unauthorized";
     case 403:
@@ -43,11 +48,12 @@ function getStatusText(status: number): string {
   }
 }
 
-export function ApiTestBench({
+export const ApiTestBench = memo(function ApiTestBench({
   executionMode,
   backendHealth,
   loadingEndpoint,
   apiResult,
+  faultEval,
   onChangeMode,
   onInvoke
 }: ApiTestBenchProps) {
@@ -61,14 +67,29 @@ export function ApiTestBench({
           <div>
             <h2>Protected Resource Server Test Bench</h2>
             <p className="card-caption">
-              Validate stateless RS256 JWKS verification, RBAC role guards &amp; OAuth 2.0 scope enforcement
+              Validate stateless RS256 JWKS verification, RBAC role guards, OAuth 2.0 scopes &amp;
+              MCP tool delegation
             </p>
           </div>
         </div>
 
         <div className="bench-controls">
-          <div className="health-pill" title={backendHealth.issuer ?? "Express Resource Server health"}>
-            <span className={`status-dot ${backendHealth.reachable ? "dot-active" : "dot-warn"}`} />
+          {faultEval.active && (
+            <div className="fault-active-pill" title={faultEval.summary}>
+              <Zap size={12} />
+              <span>Fault: {faultEval.shortLabel}</span>
+            </div>
+          )}
+
+          <div
+            className="health-pill"
+            title={
+              backendHealth.reachable
+                ? backendHealth.issuer ?? "Express Resource Server online"
+                : "Express backend unreachable — running seamlessly in Browser Simulation Mode"
+            }
+          >
+            <span className={`status-dot ${backendHealth.reachable ? "dot-active" : "dot-sim"}`} />
             <span>{backendHealth.statusText}</span>
           </div>
 
@@ -91,7 +112,7 @@ export function ApiTestBench({
               onClick={() => onChangeMode("dry-run")}
             >
               <ShieldCheck size={13} />
-              Policy Dry-Run
+              {backendHealth.reachable ? "Policy Dry-Run" : "Browser Simulation"}
             </button>
           </div>
         </div>
@@ -151,17 +172,37 @@ export function ApiTestBench({
               <div className="response-meta-right">
                 <span className="latency-chip">{apiResult.latencyMs} ms</span>
                 <span className="mode-chip">
-                  {apiResult.mode === "live" ? "Live Express" : "Dry-Run"}
+                  {apiResult.mode === "live" ? "Live Express" : "Browser Simulation"}
                 </span>
               </div>
             )}
           </div>
 
+          {apiResult?.defenseTrace && (
+            <div
+              className={`bench-trace-banner ${
+                apiResult.defenseTrace.outcome === "REJECTED"
+                  ? "bench-trace-rejected"
+                  : "bench-trace-allowed"
+              }`}
+            >
+              {apiResult.defenseTrace.outcome === "REJECTED" ? (
+                <ShieldAlert size={14} />
+              ) : (
+                <ShieldCheck size={14} />
+              )}
+              <div>
+                <strong>{apiResult.defenseTrace.layer}</strong> ({apiResult.defenseTrace.rfc}):{" "}
+                <span>{apiResult.defenseTrace.details}</span>
+              </div>
+            </div>
+          )}
+
           <JsonHighlighter
             data={apiResult ? apiResult.data : null}
             maxHeight={340}
             emptyMessage={
-              "// Click Invoke on any endpoint to inspect HTTP status, latency & RBAC response.\n// Tip: Use 'Live Express API' to test real RS256 JWKS signature rejection (401),\n// or 'Policy Dry-Run' to simulate RBAC allow (200) vs deny (403) with Demo Tokens."
+              "// Click Invoke on any endpoint (or Execute Tool in AI Agent mode) to inspect HTTP status,\n// latency, RBAC/MCP verdicts & structured Defense Traces.\n// Static reviewers get 100% interactivity automatically via Browser Simulation Mode."
             }
             copyLabel="Copy API response JSON"
           />
@@ -169,4 +210,4 @@ export function ApiTestBench({
       </div>
     </section>
   );
-}
+});

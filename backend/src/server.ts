@@ -1,11 +1,18 @@
 import cors from "cors";
-import express, { type ErrorRequestHandler, type Express } from "express";
+import express, { type ErrorRequestHandler, type Express, type RequestHandler } from "express";
 import helmet from "helmet";
 import identityConfig from "./config/identityConfig.js";
-import apiRoutes from "./routes/apiRoutes.js";
+import { authenticateToken } from "./middleware/authMiddleware.js";
+import { createApiRouter } from "./routes/apiRoutes.js";
+import { createMcpRouter } from "./routes/mcpRoutes.js";
 
-export function createApp(): Express {
+export interface CreateAppOptions {
+  readonly authMiddleware?: RequestHandler;
+}
+
+export function createApp(options?: CreateAppOptions): Express {
   const app = express();
+  const authMiddleware = options?.authMiddleware ?? authenticateToken;
 
   app.use(helmet());
   app.use(
@@ -29,11 +36,13 @@ export function createApp(): Express {
       environment: identityConfig.nodeEnv,
       issuer: identityConfig.issuer,
       jwksUri: identityConfig.jwksUri,
+      mcpToolsEndpoint: "/api/mcp/tools/call",
       uptimeSeconds: Math.round(process.uptime())
     });
   });
 
-  app.use("/api/v1", apiRoutes);
+  app.use("/api/v1", createApiRouter(authMiddleware));
+  app.use("/api/mcp", createMcpRouter(authMiddleware));
 
   app.use((_req, res) => {
     res.status(404).json({
@@ -56,19 +65,23 @@ export function createApp(): Express {
   return app;
 }
 
-const app = createApp();
-const server = app.listen(identityConfig.port, () => {
-  console.log(
-    `[Choreo Labs / WSO2 Resource Server] Listening on http://localhost:${identityConfig.port} (Issuer: ${identityConfig.issuer})`
-  );
-});
+const isTestRuntime = process.env.VITEST === "true" || process.env.NODE_ENV === "test";
 
-function shutdown(signal: string): void {
-  console.log(`[Choreo Labs / WSO2 Resource Server] Received ${signal}, closing gracefully...`);
-  server.close(() => {
-    process.exit(0);
+if (!isTestRuntime) {
+  const app = createApp();
+  const server = app.listen(identityConfig.port, () => {
+    console.log(
+      `[Choreo Labs / WSO2 Resource Server] Listening on http://localhost:${identityConfig.port} (Issuer: ${identityConfig.issuer})`
+    );
   });
-}
 
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+  const shutdown = (signal: string): void => {
+    console.log(`[Choreo Labs / WSO2 Resource Server] Received ${signal}, closing gracefully...`);
+    server.close(() => {
+      process.exit(0);
+    });
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+}

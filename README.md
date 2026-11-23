@@ -1,18 +1,52 @@
 <div align="center">
 
-# Choreo Labs (formerly WSO2) — Identity Integration Console & PKCE Flow Visualizer
+# Choreo Labs (formerly WSO2) — Identity Integration Console, Attack Lab & AI Agent MCP Guard
 
-**Flagship full-stack CIAM reference platform for Choreo Labs (formerly WSO2) — WSO2 Identity Server 7.0 & Asgardeo.**
-*Featuring an interactive OIDC S256 PKCE & RS256 JWKS visual protocol pipeline, live JWT Claims & RBAC Matrix Inspector, and a strict TypeScript Express resource server.*
+**Principal-grade full-stack CIAM & AI Agent Identity reference platform for Choreo Labs (formerly WSO2) — WSO2 Identity Server 7.0 & Asgardeo.**
+*Featuring an interactive 5-Stage Human CIAM + 6th-Stage RFC 8693 AI Agent Delegation & MCP Guard SVG pipeline, a 6-scenario Break-the-Flow Attack Lab, `Cmd+K` developer ergonomics, and zero-config Browser Simulation Mode.*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](./LICENSE)
 [![Choreo Labs / WSO2 IS 7.0](https://img.shields.io/badge/Choreo%20Labs%20%7C%20WSO2%20IS-7.0%20%26%20Asgardeo-FF7300?style=flat-square&logo=wso2&logoColor=white)](https://wso2.com/identity-server/)
+[![RFC 8693 AI Agent OBO](https://img.shields.io/badge/RFC%208693-AI%20Agent%20OBO%20%2B%20MCP-A78BFA?style=flat-square)](./backend/src/routes/mcpRoutes.ts)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)](https://react.dev/)
-[![Strict TypeScript](https://img.shields.io/badge/TypeScript-Strict%20Full--Stack-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Express Resource API](https://img.shields.io/badge/Node.js-Express%20RS256%20JWKS-339933?style=flat-square&logo=nodedotjs&logoColor=white)](https://expressjs.com/)
-[![Docker Compose](https://img.shields.io/badge/Docker-WSO2%20IS%207.0-2496ED?style=flat-square&logo=docker&logoColor=white)](./docker/docker-compose.yml)
+[![Strict TypeScript](https://img.shields.io/badge/TypeScript-Strict%20Zero--any-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Vitest Security Suite](https://img.shields.io/badge/Vitest-Security%20Tests-6E9F18?style=flat-square&logo=vitest&logoColor=white)](./backend/src/__tests__/security.test.ts)
 
 </div>
+
+![Choreo Labs WSO2 Identity Integration Console 6-Stage Architecture Banner](./docs/choreo-labs-architecture-banner.svg)
+
+---
+
+## Executive Capabilities Summary
+
+| Capability | Protocol / Standard | What You Can Inspect & Test |
+| :--- | :--- | :--- |
+| **5-Stage Human CIAM Pipeline** | `OAuth 2.0` · `OIDC Core 1.0` · `RFC 7636 S256` | Real browser Web Crypto 384-bit PKCE (`code_verifier`, SHA-256 `code_challenge`, CSRF `state`), WSO2 IS 7.0 / Asgardeo presets, stateless `RS256` JWKS LRU cache, and `requireRoles` / `requireScopes` guards. |
+| **6th-Stage AI Agent Delegation & MCP Guard** | `RFC 8693 OBO` · `MCP tools/call` | Toggle **`Human CIAM (5-Stage)` ↔ `AI Agent + MCP (6-Stage)`** to mint a short-lived (**60s TTL**) down-scoped agent token with `act.sub: "agent:choreo-integrator-bot"` and test `POST /api/mcp/tools/call` (`get_order_status` → `200`, `issue_refund` → `403 Scope Escalation`, `export_all_users` → `403 Human Approval Required`). |
+| **Break-the-Flow Security & Edge-Case Lab** | `RFC 7636` · `RFC 6749` · `RFC 8725` · `RFC 7517` · `RFC 7519` | Inject 6 real-world security faults (`PKCE Verifier Mismatch`, `CSRF State Replay`, `JWT alg:none / HS256 Downgrade`, `JWKS kid Key Rotation Miss [401 vs 200 Recover]`, `aud/iss Spoof`, `Expired Token / Clock Skew`) with live SVG error highlighting, wire payloads, and structured **Defense Traces**. |
+| **Developer Ergonomics & Zero-Config Demo** | `Cmd+K` · `ARIA` · `Browser Simulation Mode` | Keyboard-navigable SVG nodes (`←`/`→`, `Home`/`End`, `prefers-reduced-motion`), `Cmd+K` / `Ctrl+K` Command Palette, Live Code Exporter (`curl` with redact/reveal toggle, strict TS `fetch`, WSO2/Asgardeo OIDC JSON), and automatic **Browser Simulation Mode** when Express/Docker is offline. |
+
+---
+
+## Quick Start: Local Full-Stack vs. Static Demo
+
+```bash
+# 1. Install dependencies (one-time)
+npm install --prefix backend && npm install --prefix frontend
+
+# 2. Run full verification (Strict TypeScript + ESLint + Prod Build + Vitest Security Suite)
+npm run check
+
+# 3. Preview instantly in Browser Simulation Mode (no Docker or backend required)
+npm run dev:frontend
+
+# 4. Or run Full-Stack with live Express RS256 JWKS + MCP Resource Server
+npm run dev:backend   # Terminal 1 -> http://localhost:5050
+npm run dev:frontend  # Terminal 2 -> http://localhost:5173
+```
+
+> **Static / Vercel / GitHub Pages Reviewers:** If the Express backend or WSO2 IS 7.0 Docker container is unreachable, the frontend automatically activates **Browser Simulation Mode** with zero console errors so every stage, Attack Lab fault, RBAC matrix check, and RFC 8693 MCP tool guard works out of the box.
 
 ---
 
@@ -20,67 +54,72 @@
 
 ### 1. Interactive OIDC PKCE (S256) & Stateless RS256 JWKS Flow Visualizer
 
-Click any node along the 5-stage protocol pipeline (`React Public SPA` -> `Web Crypto S256 PKCE` -> `Choreo Labs / WSO2 IS 7.0 & Asgardeo` -> `Stateless RS256 JWKS Verify` -> `RBAC Protected API`) to inspect real Web Crypto API PKCE artifacts, wire payloads, RFC security invariants, and live runtime state without needing an external IdP to explore the flow.
+Click or Arrow-key through the protocol pipeline (`React Public SPA` -> `Web Crypto S256 PKCE` -> `Choreo Labs / WSO2 IS 7.0 & Asgardeo` -> `Stateless RS256 JWKS Verify` -> `RBAC Protected API` -> optional `AI Agent OBO -> MCP Guard`) to inspect live Web Crypto PKCE artifacts, Break-the-Flow Attack Lab defense traces, and RFC invariants.
 
 ![Interactive OIDC PKCE and Stateless RS256 JWKS Flow Visualizer](./docs/screenshots/01-oidc-pkce-flow-visualizer.png)
 
 ### 2. Identity Control Plane, Live JWT Claims & RBAC Matrix Inspector, and API Test Bench
 
-Switch seamlessly between **WSO2 Identity Server 7.0 (Local Docker)** and **Asgardeo Cloud (Choreo Labs SaaS)** presets, inspect decoded RS256 headers, groups, and OAuth 2.0 scopes, preview real-time endpoint authorization decisions, and invoke protected Express endpoints with live latency telemetry.
+Switch seamlessly between **WSO2 Identity Server 7.0 (Local Docker)** and **Asgardeo Cloud (Choreo Labs SaaS)** presets, inspect Human or RFC 8693 Delegated Agent (`act.sub`, 60s TTL countdown, stripped scopes) JWT claims, preview real-time endpoint/MCP policies, and invoke protected endpoints with live latency telemetry.
 
 ![Identity Control Plane, Live JWT Claims Inspector, and Protected Resource Server Test Bench](./docs/screenshots/02-jwt-claims-rbac-inspector.png)
 
 ### 3. First-Class Light & Dark Theme Parity (Asgardeo Cloud + 403 RBAC Policy Rejection)
 
-Engineered with Apple / Linear developer-tool polish and full Dark/Light token parity across SVG pipeline graphs, syntax-highlighted JSON payloads, and real-time RBAC rejection diagnostics (`HTTP 403 Forbidden`).
+Engineered with Apple / Linear developer-tool polish and full Dark/Light token parity across SVG pipeline graphs, syntax-highlighted JSON payloads, `Cmd+K` Command Palette, Code Exporter Drawer, and real-time RBAC / MCP policy rejection diagnostics (`HTTP 401` / `HTTP 403`).
 
 ![Light Theme Identity Console with Asgardeo Preset and RBAC 403 Rejection](./docs/screenshots/03-light-theme-rbac-console.png)
 
 ---
 
-## System Architecture
-
-The platform decouples identity governance from application business logic using a **Zero-Trust, Stateless OAuth 2.0 / OIDC architecture** compatible with both **WSO2 Identity Server 7.0** and **Asgardeo Cloud** from **Choreo Labs (formerly WSO2)**. Public Single-Page Applications never hold client secrets, while backend resource APIs cryptographically validate incoming asymmetric `RS256` Bearer JWTs against the tenant JWKS endpoint.
+## System Architecture (6-Stage CIAM + AI Agent MCP Delegation)
 
 ```mermaid
 flowchart LR
     subgraph Client["Frontend Public Client - React 19 + Strict TypeScript"]
-        UI["Identity Console UI"]
-        FLOW["Interactive PKCE & JWKS Flow Visualizer"]
+        UI["Identity Console + Cmd+K Palette"]
+        FLOW["5/6-Stage Accessible SVG Visualizer"]
+        LAB["Break-the-Flow Attack Lab"]
         PKCE["Web Crypto S256 PKCE Engine"]
-        INSPECTOR["Live JWT Claims & RBAC Inspector"]
+        INSPECTOR["Human & OBO Agent JWT Inspector"]
     end
 
     subgraph IdP["Choreo Labs Identity Provider - WSO2 IS 7.0 / Asgardeo"]
         AUTHZ["Authorize Endpoint - /oauth2/authorize"]
-        TOKEN["Token Endpoint - /oauth2/token"]
+        TOKEN["Token & RFC 8693 OBO Exchange - /oauth2/token"]
         JWKS["Public Key Set - /oauth2/jwks"]
     end
 
     subgraph ResourceServer["Backend Resource API - Express + Strict TypeScript"]
-        AUTHMW["RS256 Auth Middleware"]
+        AUTHMW["RS256 Algorithm-Pinned Auth Middleware"]
         KEYCACHE["In-Memory JWKS LRU Cache"]
         RBAC["RBAC Role & Scope Guard"]
-        ROUTES["Protected REST Endpoints"]
+        OBOGUARD["RFC 8693 Agent Delegation Guard"]
+        ROUTES["Protected REST Endpoints - /api/v1/*"]
+        MCP["MCP Tool Gateway - /api/mcp/tools/call"]
     end
 
     UI --> FLOW
+    UI --> LAB
     UI --> PKCE
     PKCE -->|1. Auth Request with S256 Challenge| AUTHZ
     AUTHZ -->|2. Authorization Code and State| PKCE
     PKCE -->|3. Exchange Code with Verifier| TOKEN
-    TOKEN -->|4. Mint RS256 Access and ID JWTs| UI
+    TOKEN -->|4. Mint RS256 Human or OBO Agent JWT| UI
     UI --> INSPECTOR
-    UI -->|5. API Call with Bearer JWT| AUTHMW
-    AUTHMW -->|6. Resolve kid Signing Key| KEYCACHE
+    UI -->|5. Human API Call with Bearer JWT| AUTHMW
+    UI -->|6. AI Agent MCP Call with OBO JWT| AUTHMW
+    AUTHMW -->|Resolve kid Signing Key| KEYCACHE
     KEYCACHE -.->|Cache Miss Public Key Fetch| JWKS
     AUTHMW --> RBAC
     RBAC --> ROUTES
+    AUTHMW --> OBOGUARD
+    OBOGUARD --> MCP
 ```
 
 ---
 
-## OIDC PKCE & Stateless RS256 Verification Sequence
+## OIDC PKCE, Attack Lab & RFC 8693 AI Agent Delegation Sequence
 
 ```mermaid
 sequenceDiagram
@@ -88,46 +127,38 @@ sequenceDiagram
     actor User
     participant SPA as React Public SPA
     participant IdP as Choreo Labs WSO2 IS 7.0 / Asgardeo
-    participant API as Express Resource API
+    participant API as Express Resource & MCP API
 
-    User->>SPA: Trigger Login with WSO2 IS 7.0 or Asgardeo
+    User->>SPA: Trigger Login or Enable AI Agent Mode
     SPA->>SPA: Generate 384-bit code_verifier, SHA-256 code_challenge and CSRF state
     SPA->>IdP: Redirect to /oauth2/authorize with S256 PKCE and state
-    IdP->>User: Authenticate user credentials and MFA
-    IdP-->>SPA: Redirect to /callback with authorization code and state
-    SPA->>SPA: Validate returned state against sessionStorage nonce
+    IdP-->>SPA: Callback with authorization code and state
+    SPA->>SPA: Verify state against sessionStorage nonce
     SPA->>IdP: POST /oauth2/token with code and code_verifier
-    IdP->>IdP: Verify SHA-256 digest of code_verifier matches code_challenge
-    IdP-->>SPA: Issue RS256 signed JWT Access Token and ID Token
-    User->>SPA: Invoke protected endpoint in Test Bench
-    SPA->>API: GET /api/v1/admin/audit-logs with Authorization Bearer JWT
-    API->>IdP: Resolve public key by kid via /oauth2/jwks cached for 10m
-    API->>API: Verify RS256 signature, issuer, audience, expiry and RBAC groups
-    alt Admin group claim present
-        API-->>SPA: 200 OK with security audit telemetry
-    else Missing required admin role
-        API-->>SPA: 403 Forbidden with RBAC policy diagnostics
+    IdP-->>SPA: Mint RS256 Human Access Token
+    opt Stage 6 AI Agent Delegation Enabled
+        SPA->>IdP: RFC 8693 Token Exchange with subject_token and actor_token
+        IdP-->>SPA: Mint 60s Down-Scoped Agent JWT with act.sub and orders:read
+        SPA->>API: POST /api/mcp/tools/call with Delegated Bearer JWT
+        API->>IdP: Resolve public key by kid via /oauth2/jwks LRU cache
+        API->>API: Enforce RS256 pinning, act.sub, TTL bound, and scope subset
+        alt Tool get_order_status with orders:read
+            API-->>SPA: 200 OK with redacted order telemetry and Defense Trace
+        else Tool issue_refund or export_all_users
+            API-->>SPA: 403 Forbidden scope_escalation_blocked or human_approval_required
+        end
     end
 ```
 
 ---
 
-## Security Architecture
+## Security Architecture & RFC Rigor
 
-- **RFC 7636 PKCE Public Client Hardening**: Generates 384-bit (`48`-byte) cryptographic `code_verifier` values and `S256` (`SHA-256` Base64URL) `code_challenge` digests natively via the browser Web Crypto API (`crypto.getRandomValues` + `crypto.subtle.digest`), ensuring zero client secrets ever ship in frontend bundles.
-- **CSRF State Binding**: Enforces strict one-time cryptographic `state` validation on `/callback` before exchanging authorization codes at `/oauth2/token`.
-- **Stateless RS256 Algorithm Pinning & JWKS Caching**: Backend `authMiddleware` explicitly pins `algorithms: ["RS256"]` to block `alg: none` and HMAC key-confusion attacks, resolves signing keys by JWT `kid` via `jwks-rsa` with a 10-minute in-memory cache (`maxEntries: 5`, rate-limited to `10 req/min`), and validates `iss`, `aud`, and `exp` with zero database lookups.
-- **Decoupled RBAC & OAuth 2.0 Scope Guards**: Express middleware separates coarse-grained identity groups (`requireRoles("admin", "administrator")`) from granular API capabilities (`requireScopes("write:reports")`), normalizing both array and comma-delimited WSO2 IS / Asgardeo claim formats.
-- **Defense-in-Depth Express Surface**: Enforces HTTP security headers via `helmet`, strict origin allow-listing via `cors`, `1mb` JSON payload caps, strict input sanitization, and graceful `SIGTERM`/`SIGINT` server shutdown.
-
----
-
-## Frontend Developer-Tool Architecture
-
-- **Interactive 5-Stage SVG/React Protocol Pipeline (`OidcFlowVisualizer.tsx`)**: Visualizes the complete `SPA -> PKCE -> Choreo Labs IdP -> RS256 JWKS -> RBAC API` handshake with animated active connectors, live Web Crypto PKCE regeneration, step-through simulation playback, and a synchronized 3-pane stage inspector (Protocol Wire Payload, Security Invariants, Live Runtime Telemetry).
-- **Multi-Tab Live JWT Claims & RBAC Matrix Inspector (`JwtClaimsInspector.tsx`)**: Parses active Bearer JWTs into a visual identity summary, cryptographic metadata strip (`alg`, `kid`, `aud`), role/scope pills, a real-time 5-endpoint authorization preview matrix, syntax-highlighted decoded JSON, and color-coded raw compact JWT segments.
-- **Dual-Mode Protected API Test Bench (`ApiTestBench.tsx`)**: Probes live Express `/health` telemetry and supports both **Live Express API** invocations (proving real `401` cryptographic signature rejection on unsigned demo tokens) and **Policy Dry-Run** mode (allowing instant exploration of `200 OK`, `201 Created`, and `403 Forbidden` RBAC decisions without spinning up Docker).
-- **100% Strict TypeScript & Zero-`any` Discipline**: Both `frontend/` and `backend/` enforce `strict: true`, `noImplicitAny: true`, and ESLint `@typescript-eslint/no-explicit-any: "error"`.
+- **RFC 7636 PKCE Public Client Hardening**: Generates 384-bit (`48`-byte) cryptographic `code_verifier` values and `S256` (`SHA-256` Base64URL) `code_challenge` digests natively via the browser Web Crypto API, verified against RFC 7636 Appendix B test vectors in Vitest.
+- **RFC 6749 §10.12 CSRF State Binding**: Enforces strict one-time cryptographic `state` validation on `/callback` before exchanging authorization codes at `/oauth2/token`.
+- **RFC 8725 RS256 Algorithm Pinning & RFC 7517 JWKS Rotation**: Backend `createAuthMiddleware` explicitly pins `algorithms: ["RS256"]` to block `alg: "none"` and `HS256` key-confusion attacks, resolves keys by `kid` via `jwks-rsa` (10-min LRU cache, `maxEntries: 5`, rate-limited to `10 req/min`), and validates `iss`, `aud`, and `exp` (`±5s` clock tolerance) with structured `DefenseTrace` diagnostics.
+- **RFC 8693 AI Agent Delegation & MCP Guard**: `requireAgentDelegation` + `evaluateMcpToolAuthorization` enforce an explicit `act.sub` actor claim (`agent:*`), cap delegated token TTL (`<= 300s`, 60s in console), block privilege escalation (`issue_refund` → `403 scope_escalation_blocked`), and mandate step-up human consent for bulk PII export (`export_all_users` → `403 human_approval_required`).
+- **100% Strict TypeScript Discipline**: Both `frontend/` and `backend/` enforce `strict: true`, zero `any`, zero `@ts-ignore`, discriminated unions with exhaustive `assertNever` switches, and ESLint `@typescript-eslint/no-explicit-any: "error"`.
 
 ---
 
@@ -135,12 +166,28 @@ sequenceDiagram
 
 | Method | Endpoint | Access Policy | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/health` | Public | Resource server health status, uptime, issuer, and active JWKS URI |
+| `GET` | `/health` | Public | Resource server health status, uptime, issuer, JWKS URI, and MCP endpoint |
 | `GET` | `/api/v1/public/info` | Public | Service metadata and Choreo Labs WSO2 IS 7.0 / Asgardeo protocol details |
-| `GET` | `/api/v1/user/profile` | Authenticated `RS256` JWT | Extracts and returns verified identity claims from the Bearer token |
+| `GET` | `/api/v1/user/profile` | Authenticated `RS256` JWT | Extracts and returns verified identity claims (and optional `act` actor) |
 | `GET` | `/api/v1/user/roles` | Authenticated `RS256` JWT | Lists resolved user groups, OAuth 2.0 scopes, and computed admin flag |
 | `GET` | `/api/v1/admin/audit-logs` | RBAC Role (`admin`) | Returns security audit telemetry; rejects non-admin principals with `403` |
 | `POST` | `/api/v1/reports` | OAuth2 Scope (`write:reports`) | Creates a compliance report when the `write:reports` scope is granted |
+| `POST` | `/api/mcp/tools/call` | `RS256` + `RFC 8693 OBO` (`act.sub`) | Enforces `requireAgentDelegation`, short TTL, scope-subset checks, and human step-up consent |
+
+---
+
+## Automated Security Test Suite (Vitest)
+
+Run deterministic cryptographic and policy tests across both workspaces:
+
+```bash
+# Run both backend and frontend Vitest suites
+npm test
+
+# Or run individual suites
+npm run test:backend   # Ephemeral RSA-2048 keypair tests: RS256 pinning, exp/aud/iss/kid, RBAC, MCP OBO
+npm run test:frontend  # RFC 7636 Appendix B S256 vector, JWT parser edge cases, RBAC dry-run & MCP simulation
+```
 
 ---
 
@@ -150,37 +197,47 @@ sequenceDiagram
 wso2-identity-integration-demo/
 ├── backend/
 │   ├── src/
+│   │   ├── __tests__/
+│   │   │   └── security.test.ts         # Ephemeral RSA-2048 Vitest suite (RS256, RBAC, MCP OBO)
 │   │   ├── config/
 │   │   │   └── identityConfig.ts        # Strict typed environment loader (WSO2 IS & Asgardeo)
 │   │   ├── middleware/
-│   │   │   ├── authMiddleware.ts        # Stateless RS256 JWT verification & JWKS cache
-│   │   │   └── rbacMiddleware.ts        # Role & OAuth 2.0 scope authorization guards
+│   │   │   ├── authMiddleware.ts        # Stateless RS256 pinning, JWKS LRU cache & DefenseTrace
+│   │   │   └── rbacMiddleware.ts        # requireRoles, requireScopes & requireAgentDelegation
 │   │   ├── routes/
-│   │   │   └── apiRoutes.ts             # Public, authenticated, RBAC & scope-protected routes
+│   │   │   ├── apiRoutes.ts             # Public, authenticated, RBAC & scope-protected routes
+│   │   │   └── mcpRoutes.ts             # POST /api/mcp/tools/call RFC 8693 MCP Tool Guard
 │   │   ├── types/
-│   │   │   └── auth.ts                  # Express Request augmentation & verified JWT claim types
+│   │   │   └── auth.ts                  # Discriminated unions, ActorClaim & DefenseTrace types
 │   │   └── server.ts                    # Hardened Express bootstrap (Helmet, CORS, graceful shutdown)
-│   ├── .env.example                     # Backend environment template (WSO2 IS 7.0 & Asgardeo)
-│   ├── eslint.config.mjs                # Strict ESLint v9 flat config (zero explicit any)
+│   ├── .env.example
+│   ├── eslint.config.mjs
 │   ├── package.json
 │   └── tsconfig.json
 ├── frontend/
 │   ├── src/
+│   │   ├── __tests__/
+│   │   │   └── security.test.ts         # PKCE S256 vector, JWT decoding, RBAC & MCP Vitest suite
 │   │   ├── components/
-│   │   │   ├── ApiTestBench.tsx         # Protected API test bench with Live & Policy Dry-Run modes
+│   │   │   ├── ApiTestBench.tsx         # Live Express & Browser Simulation Test Bench + Defense Trace
+│   │   │   ├── AttackLabPanel.tsx       # 6-scenario interactive Break-the-Flow Attack Lab
 │   │   │   ├── AuthSessionCard.tsx      # WSO2 IS 7.0 / Asgardeo preset switcher & PKCE controls
-│   │   │   ├── JsonHighlighter.tsx      # Zero-dependency syntax-highlighted JSON & copy frame
-│   │   │   ├── JwtClaimsInspector.tsx   # Multi-tab Claims/RBAC Matrix, JSON & Raw JWT inspector
-│   │   │   └── OidcFlowVisualizer.tsx   # Interactive 5-stage SVG PKCE & RS256 JWKS visualizer
+│   │   │   ├── CodeExporterDrawer.tsx   # Live curl (redacted/revealed), strict TS & OIDC JSON exporter
+│   │   │   ├── CommandPalette.tsx       # Zero-bloat Cmd+K / Ctrl+K keyboard command palette
+│   │   │   ├── JsonHighlighter.tsx      # Memoized syntax-highlighted JSON & copy frame
+│   │   │   ├── JwtClaimsInspector.tsx   # Human & RFC 8693 OBO Agent Claims, TTL & Policy Matrix
+│   │   │   ├── OidcFlowVisualizer.tsx   # Accessible 5/6-stage SVG visualizer + MCP tool controls
+│   │   │   └── TokenTtlBadge.tsx        # Isolated 1Hz TTL countdown component
 │   │   ├── lib/
-│   │   │   ├── apiClient.ts             # Typed API client, health probe & RBAC policy evaluator
-│   │   │   └── pkce.ts                  # Web Crypto S256 PKCE engine, OIDC exchange & JWT parser
-│   │   ├── App.tsx                      # Root console layout & Light/Dark theme state
-│   │   ├── index.css                    # Apple/Linear Dark & Light design system tokens
+│   │   │   ├── apiClient.ts             # Typed API client, health probe & Browser Simulation engine
+│   │   │   ├── pkce.ts                  # Web Crypto S256 PKCE, JWT parser & RFC 8693 OBO minter
+│   │   │   └── securityLab.ts           # Discriminated Fault Lab states, MCP policies & code generator
+│   │   ├── App.tsx                      # Root console, Cmd+K wiring, Flow Mode & theme state
+│   │   ├── index.css                    # Apple/Linear Dark & Light design system + reduced-motion
 │   │   ├── main.tsx
 │   │   └── vite-env.d.ts
-│   ├── .env.example                     # Frontend Vite template (WSO2 IS 7.0 & Asgardeo)
-│   ├── eslint.config.mjs                # Strict ESLint v9 + React Hooks config
+│   ├── .env.example
+│   ├── eslint.config.mjs
 │   ├── index.html
 │   ├── package.json
 │   ├── tsconfig.json
@@ -188,64 +245,27 @@ wso2-identity-integration-demo/
 ├── docker/
 │   └── docker-compose.yml               # Local Choreo Labs / WSO2 Identity Server 7.0 stack
 ├── docs/
+│   ├── choreo-labs-architecture-banner.svg  # 6-stage architecture banner
 │   ├── screenshots/                     # High-res Light & Dark UI showcase captures
 │   └── wso2-setup-guide.md              # Step-by-step WSO2 IS 7.0 & Asgardeo SP registration guide
-├── .env.example                         # Unified root environment reference
-├── .gitignore                           # Hardened secret, certificate & build exclusions
-├── LICENSE                              # MIT Open-Source License
-├── package.json                         # Monorepo workspace orchestration scripts
+├── .env.example
+├── .gitignore
+├── LICENSE
+├── package.json
 └── README.md
 ```
 
 ---
 
-## Getting Started
-
-### Prerequisites
-
-- **Node.js** `>= 20.x` and **npm** `>= 10.x`
-- **Docker** & **Docker Compose** (optional — required only for local WSO2 Identity Server 7.0 deployment; alternatively connect directly to **Asgardeo Cloud** or explore immediately via built-in Demo Tokens & Policy Dry-Run)
-
-### 1. Clone & Configure Environment
+## Optional: Local WSO2 Identity Server 7.0 via Docker
 
 ```bash
-git clone https://github.com/theekshana-sudeepa/wso2-identity-integration-demo.git
-cd wso2-identity-integration-demo
-
 cp backend/.env.example backend/.env
 cp frontend/.env.example frontend/.env
-```
-
-Update `frontend/.env` with your `VITE_CLIENT_ID` and `backend/.env` with your **WSO2 Identity Server 7.0** or **Asgardeo Cloud** tenant URLs. See [docs/wso2-setup-guide.md](./docs/wso2-setup-guide.md) for exact application registration steps.
-
-### 2. Launch Local WSO2 Identity Server 7.0 (Optional)
-
-```bash
 npm run docker:up
 ```
 
-Once the health check passes, access the WSO2 Identity Server 7.0 Console at `https://localhost:9443/console`.
-
-### 3. Install Dependencies & Run Services
-
-```bash
-# Install workspace dependencies
-npm install --prefix backend
-npm install --prefix frontend
-
-# Start Express Resource Server (http://localhost:5050)
-npm run dev:backend
-
-# In a separate terminal, start React SPA Console (http://localhost:5173)
-npm run dev:frontend
-```
-
-### 4. Run Full TypeScript, Lint & Production Build Verification
-
-```bash
-# Runs tsc --noEmit, ESLint, and production builds across both backend & frontend
-npm run check
-```
+Once healthy, access the WSO2 Identity Server 7.0 Console at `https://localhost:9443/console` and follow [docs/wso2-setup-guide.md](./docs/wso2-setup-guide.md) to register the SPA Public Client.
 
 ---
 

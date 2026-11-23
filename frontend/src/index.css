@@ -1581,3 +1581,920 @@ pre,
     gap: 0.2rem;
   }
 }
+
+
+/* ============================================================================
+   Upgrades 1–3: Browser Simulation Badge, Attack Lab, RFC 8693 MCP Strip,
+   Command Palette (Cmd+K), Code Exporter Drawer, Focus Rings & Reduced Motion
+   ============================================================================ */
+
+.sim-mode-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.14rem 0.52rem;
+  border-radius: 999px;
+  background: var(--accent-info-soft);
+  color: var(--accent-info);
+  border: 1px solid rgba(56, 189, 248, 0.32);
+}
+
+.dot-sim {
+  background: var(--accent-info);
+  box-shadow: 0 0 6px var(--accent-info);
+}
+
+.mode-switch-tabs {
+  flex-shrink: 0;
+}
+
+.seg-tab-agent {
+  color: var(--accent-violet);
+}
+
+.cmdk-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.36rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.cmdk-trigger:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  background: var(--bg-surface-hover);
+}
+
+/* SVG Accessibility Focus Rings, Fault Edges & Recovered Tone */
+.svg-node-focus-ring {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 2.5;
+  transition: stroke 0.15s ease;
+}
+
+.svg-node:focus-visible .svg-node-focus-ring {
+  stroke: var(--accent-info);
+}
+
+.svg-node-fault .svg-node-box {
+  stroke: var(--accent-danger);
+  stroke-width: 1.8;
+}
+
+.svg-node.tone-recovered .svg-node-box {
+  stroke: var(--accent-success);
+  stroke-width: 1.75;
+}
+
+.svg-glow-blocked {
+  stroke: var(--accent-danger);
+  stroke-opacity: 0.32;
+}
+
+.svg-glow-recovered {
+  stroke: var(--accent-success);
+  stroke-opacity: 0.3;
+}
+
+.svg-status-dot.tone-recovered,
+.svg-state-text.tone-recovered {
+  fill: var(--accent-success);
+}
+
+.svg-edge-blocked {
+  stroke: var(--accent-danger);
+  stroke-width: 2.2;
+  stroke-dasharray: 6 4;
+  animation: flow-dash 0.9s linear infinite;
+}
+
+.svg-edge-halted {
+  stroke: var(--border-subtle);
+  opacity: 0.45;
+}
+
+.svg-arrow-blocked {
+  fill: var(--accent-danger);
+}
+
+.svg-edge-pill-blocked {
+  stroke: var(--accent-danger);
+  fill: var(--accent-danger-soft);
+}
+
+.svg-edge-label-blocked {
+  fill: var(--accent-danger);
+}
+
+.stepper-dot-blocked {
+  border-color: var(--accent-danger);
+  color: var(--accent-danger);
+}
+
+.state-callout.tone-recovered {
+  background: var(--accent-success-soft);
+  color: var(--accent-success);
+  border-color: rgba(16, 185, 129, 0.32);
+}
+
+/* Break-the-Flow Attack Lab */
+.attack-lab {
+  border-radius: 11px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface-elevated);
+  margin-bottom: 1rem;
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+.attack-lab-alert {
+  border-color: rgba(244, 63, 94, 0.42);
+}
+
+.attack-lab-recovered {
+  border-color: rgba(16, 185, 129, 0.42);
+}
+
+.attack-lab-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.58rem 0.85rem;
+}
+
+.attack-lab-toggle {
+  flex: 1;
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.55rem;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.lab-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-warn-soft);
+  color: var(--accent-warn);
+}
+
+.lab-icon-danger {
+  background: var(--accent-danger-soft);
+  color: var(--accent-danger);
+}
+
+.lab-icon-success {
+  background: var(--accent-success-soft);
+  color: var(--accent-success);
+}
+
+.attack-lab-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.lab-status-pill {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.14rem 0.5rem;
+  border-radius: 999px;
+}
+
+.lab-pill-ok {
+  background: var(--accent-success-soft);
+  color: var(--accent-success);
+}
+
+.lab-pill-blocked {
+  background: var(--accent-danger-soft);
+  color: var(--accent-danger);
+}
+
+.lab-pill-recovered {
+  background: var(--accent-info-soft);
+  color: var(--accent-info);
+}
+
+.lab-chevron {
+  margin-left: auto;
+  color: var(--text-muted);
+  display: inline-flex;
+}
+
+.attack-lab-body {
+  border-top: 1px solid var(--border-subtle);
+  padding: 0.85rem 0.95rem 0.95rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.78rem;
+}
+
+.fault-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 0.5rem;
+}
+
+.fault-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  padding: 0.55rem 0.68rem;
+  border-radius: 9px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.fault-chip:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-surface-hover);
+}
+
+.fault-chip-active {
+  border-color: var(--accent-primary-border);
+  background: var(--accent-primary-soft);
+}
+
+.fault-chip-danger {
+  border-color: rgba(244, 63, 94, 0.55);
+  background: var(--accent-danger-soft);
+}
+
+.fault-chip-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.fault-chip-name {
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.fault-chip-rfc {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.fault-chip-stage {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+}
+
+.fault-subcontrols {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.subcontrol-label {
+  font-size: 0.73rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.defense-trace-card {
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  padding: 0.78rem 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.trace-rejected {
+  border-color: rgba(244, 63, 94, 0.36);
+}
+
+.trace-recovered {
+  border-color: rgba(16, 185, 129, 0.36);
+}
+
+.defense-trace-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.defense-trace-title {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.79rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.trace-outcome-badge {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.67rem;
+  font-weight: 700;
+  padding: 0.14rem 0.5rem;
+  border-radius: 6px;
+}
+
+.outcome-rejected {
+  background: var(--accent-danger-soft);
+  color: var(--accent-danger);
+}
+
+.outcome-recovered,
+.outcome-allowed {
+  background: var(--accent-success-soft);
+  color: var(--accent-success);
+}
+
+.defense-trace-summary {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
+}
+
+.defense-trace-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.trace-kv {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 0.48rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+}
+
+.trace-kv-wide {
+  grid-column: 1 / -1;
+}
+
+.trace-kv span {
+  font-size: 0.66rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.trace-kv code {
+  font-size: 0.72rem;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.trace-kv p {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+/* Stage 06 AI Agent Delegation & MCP Strip */
+.mcp-delegation-strip {
+  border-radius: 12px;
+  border: 1px solid rgba(167, 139, 250, 0.34);
+  background: var(--bg-surface-elevated);
+  padding: 0.9rem 1.05rem;
+  margin-bottom: 1.05rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.mcp-strip-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.mcp-strip-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.stage-icon-agent {
+  background: var(--accent-violet-soft);
+  border-color: rgba(167, 139, 250, 0.4);
+  color: var(--accent-violet);
+}
+
+.mcp-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.mcp-title-row h3 {
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.mcp-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.15rem;
+}
+
+.mcp-subtitle code {
+  font-size: 0.72rem;
+  color: var(--text-primary);
+}
+
+.mcp-tools-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.mcp-tool-card {
+  border-radius: 10px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  padding: 0.72rem 0.82rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.mcp-tool-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.mcp-tool-cmd {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.mcp-expect-badge {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.63rem;
+  font-weight: 600;
+  padding: 0.12rem 0.42rem;
+  border-radius: 5px;
+}
+
+.mcp-expect-allow {
+  background: var(--accent-success-soft);
+  color: var(--accent-success);
+}
+
+.mcp-expect-deny {
+  background: var(--accent-danger-soft);
+  color: var(--accent-danger);
+}
+
+.mcp-tool-desc {
+  font-size: 0.73rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.mcp-tool-foot {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding-top: 0.35rem;
+}
+
+.mcp-req-scope {
+  font-size: 0.69rem;
+  color: var(--text-muted);
+}
+
+/* TTL Countdown Badge */
+.ttl-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.13rem 0.48rem;
+  border-radius: 999px;
+}
+
+.ttl-compact {
+  font-size: 0.65rem;
+  padding: 0.08rem 0.4rem;
+}
+
+.ttl-ok {
+  background: var(--accent-success-soft);
+  color: var(--accent-success);
+}
+
+.ttl-warn {
+  background: var(--accent-warn-soft);
+  color: var(--accent-warn);
+}
+
+.ttl-expired {
+  background: var(--accent-danger-soft);
+  color: var(--accent-danger);
+}
+
+.ttl-neutral {
+  background: var(--bg-surface-elevated);
+  color: var(--text-muted);
+}
+
+/* JWT Inspector Agent Enhancements */
+.inspector-token-switcher {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.85rem;
+}
+
+.identity-avatar-agent {
+  background: var(--accent-violet-soft);
+  border-color: rgba(167, 139, 250, 0.42);
+  color: var(--accent-violet);
+}
+
+.role-pill-agent {
+  background: var(--accent-violet-soft);
+  color: var(--accent-violet);
+  border: 1px solid rgba(167, 139, 250, 0.36);
+}
+
+.actor-claim-callout {
+  border-radius: 9px;
+  border: 1px solid rgba(167, 139, 250, 0.34);
+  background: var(--accent-violet-soft);
+  padding: 0.55rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
+}
+
+.actor-callout-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.42rem;
+  font-size: 0.72rem;
+}
+
+.actor-key {
+  font-size: 0.66rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--accent-violet);
+}
+
+.actor-val {
+  font-size: 0.72rem;
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  padding: 0.08rem 0.4rem;
+  border-radius: 5px;
+  border: 1px solid var(--border-subtle);
+}
+
+.actor-callout-sub {
+  font-size: 0.71rem;
+  color: var(--text-secondary);
+}
+
+.claim-chip-stripped {
+  background: var(--accent-danger-soft);
+  border-color: rgba(244, 63, 94, 0.28);
+  color: var(--accent-danger);
+  text-decoration: line-through;
+}
+
+/* Test Bench Fault & Defense Trace Banner */
+.fault-active-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0.32rem 0.68rem;
+  border-radius: 999px;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--accent-danger-soft);
+  color: var(--accent-danger);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+}
+
+.bench-trace-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 9px;
+  font-size: 0.74rem;
+  line-height: 1.45;
+  border: 1px solid var(--border-subtle);
+}
+
+.bench-trace-rejected {
+  background: var(--accent-danger-soft);
+  border-color: rgba(244, 63, 94, 0.34);
+  color: var(--accent-danger);
+}
+
+.bench-trace-allowed {
+  background: var(--accent-success-soft);
+  border-color: rgba(16, 185, 129, 0.32);
+  color: var(--accent-success);
+}
+
+/* Command Palette (Cmd+K) */
+.palette-backdrop,
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(5, 8, 15, 0.62);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 10vh 1rem 1rem;
+}
+
+.drawer-backdrop {
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 0;
+}
+
+.palette-modal {
+  width: 100%;
+  max-width: 580px;
+  border-radius: 14px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.palette-search-icon {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.palette-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: 0.88rem;
+  color: var(--text-primary);
+}
+
+.palette-close {
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.palette-list {
+  max-height: 360px;
+  overflow-y: auto;
+  padding: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.palette-empty {
+  padding: 1.4rem;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.palette-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.56rem 0.72rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.palette-item-active {
+  background: var(--bg-surface-hover);
+  border-color: var(--accent-primary-border);
+}
+
+.palette-item-left {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+}
+
+.palette-group-tag {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.63rem;
+  font-weight: 600;
+  padding: 0.1rem 0.42rem;
+  border-radius: 5px;
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.palette-item-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palette-item-hint {
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.palette-footer {
+  display: flex;
+  gap: 1rem;
+  padding: 0.55rem 0.95rem;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-surface-elevated);
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+}
+
+/* Live Code Exporter Drawer */
+.exporter-drawer {
+  width: 100%;
+  max-width: 620px;
+  height: 100%;
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-strong);
+  padding: 1.25rem 1.35rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  box-shadow: -16px 0 48px rgba(0, 0, 0, 0.45);
+}
+
+.drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.drawer-context-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.chip-fault-warn {
+  border-color: rgba(244, 63, 94, 0.4);
+  color: var(--accent-danger);
+  background: var(--accent-danger-soft);
+}
+
+.drawer-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.drawer-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.exporter-code {
+  flex: 1;
+  max-height: none;
+  font-size: 0.75rem;
+  line-height: 1.6;
+}
+
+/* Global Toast Notification */
+.toast-banner {
+  position: fixed;
+  bottom: 1.35rem;
+  right: 1.35rem;
+  z-index: 70;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+  padding: 0.62rem 0.95rem;
+  border-radius: 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--accent-primary-border);
+  color: var(--text-primary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  box-shadow: 0 12px 30px -8px rgba(0, 0, 0, 0.45);
+}
+
+.toast-banner svg {
+  color: var(--accent-primary);
+}
+
+@media (max-width: 1024px) {
+  .mcp-tools-grid,
+  .defense-trace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Motion Accessibility */
+@media (prefers-reduced-motion: reduce) {
+  .svg-edge-active,
+  .svg-edge-blocked,
+  .spin {
+    animation: none !important;
+  }
+
+  * {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

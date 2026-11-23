@@ -7,11 +7,12 @@
   "license": "MIT",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "build": "tsc",
+    "build": "tsc -p tsconfig.build.json",
     "start": "node dist/server.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "check": "npm run typecheck && npm run lint && npm run build"
+    "test": "vitest run src",
+    "check": "npm run typecheck && npm run lint && npm run build && npm run test"
   },
   "dependencies": {
     "cors": "^2.8.5",
@@ -31,6 +32,7 @@
     "globals": "^16.0.0",
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",
-    "typescript-eslint": "^8.26.1"
+    "typescript-eslint": "^8.26.1",
+    "vitest": "^5.1.1"
   }
 }

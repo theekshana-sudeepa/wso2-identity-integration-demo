@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import {
   Check,
   Cloud,
@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import {
   IDP_PRESETS,
+  IDP_PRESET_KEYS,
   type IdpPreset,
   type OidcConfig,
   type TokenSession
@@ -25,16 +26,18 @@ interface AuthSessionCardProps {
   readonly onLiveLogin: () => Promise<void>;
   readonly onDemoLogin: (role: "user" | "admin") => void;
   readonly onLogout: () => void;
+  readonly onNotifyCopy?: (message: string) => void;
 }
 
-export function AuthSessionCard({
+export const AuthSessionCard = memo(function AuthSessionCard({
   config,
   session,
   authError,
   onSelectPreset,
   onLiveLogin,
   onDemoLogin,
-  onLogout
+  onLogout,
+  onNotifyCopy
 }: AuthSessionCardProps) {
   const [copiedToken, setCopiedToken] = useState(false);
   const activePreset = IDP_PRESETS[config.preset];
@@ -44,6 +47,7 @@ export function AuthSessionCard({
     try {
       await navigator.clipboard.writeText(session.accessToken);
       setCopiedToken(true);
+      onNotifyCopy?.("Copied Bearer JWT to clipboard");
       window.setTimeout(() => setCopiedToken(false), 1600);
     } catch {
       setCopiedToken(false);
@@ -66,7 +70,7 @@ export function AuthSessionCard({
 
       {/* Choreo Labs IdP Switcher */}
       <div className="preset-switcher" role="tablist" aria-label="Identity Provider Platform">
-        {(Object.keys(IDP_PRESETS) as IdpPreset[]).map((presetKey) => {
+        {IDP_PRESET_KEYS.map((presetKey) => {
           const item = IDP_PRESETS[presetKey];
           const active = config.preset === presetKey;
           return (
@@ -151,4 +155,4 @@ export function AuthSessionCard({
       {authError && <div className="alert">{authError}</div>}
     </article>
   );
-}
+});
