@@ -3,6 +3,7 @@ import type {
   McpPolicyDecision,
   McpToolName
 } from "../types/auth.js";
+import { cibaApprovalStore } from "./cibaStore.js";
 
 export type McpRiskTier = "read" | "write" | "high_risk_pii";
 
@@ -251,7 +252,13 @@ export function evaluateRegisteredMcpToolPolicy(
   const primaryScope = descriptor.requiredScopes[0] ?? "orders:read";
 
   if (descriptor.requiresHumanApproval) {
-    const hasHumanApproval = Boolean(user.rawClaims.human_approval_token);
+    const rawApprovalToken =
+      typeof user.rawClaims.human_approval_token === "string"
+        ? user.rawClaims.human_approval_token
+        : "";
+    const hasHumanApproval =
+      rawApprovalToken.length > 0 &&
+      cibaApprovalStore.verifyAndConsumeApprovalToken(rawApprovalToken, user.sub, tool);
     const hasAllScopes = descriptor.requiredScopes.every((s) => user.scopes.includes(s));
     if (!hasHumanApproval || !hasAllScopes) {
       return {

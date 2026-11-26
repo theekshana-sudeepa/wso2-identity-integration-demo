@@ -122,6 +122,112 @@ async function generateManagedRsaKey(kid: string): Promise<BrowserManagedRsaKey>
 }
 
 let cachedKeyRingPromise: Promise<BrowserKeyRing> | null = null;
+const simulatedRevokedTokens = new Set<string>();
+
+export function revokeSimulatedToken(token: string): void {
+  simulatedRevokedTokens.add(token.trim());
+}
+
+export function isSimulatedTokenRevoked(token: string): boolean {
+  return simulatedRevokedTokens.has(token.trim());
+}
+
+export function clearSimulatedRevocations(): void {
+  simulatedRevokedTokens.clear();
+}
+
+export interface BrowserDpopKeyPair {
+  readonly privateKey: CryptoKey;
+  readonly publicKey: CryptoKey;
+  readonly publicJwk: {
+    readonly kty: "EC";
+    readonly crv: "P-256";
+    readonly x: string;
+    readonly y: string;
+  };
+  readonly jkt: string;
+}
+
+let cachedDpopKeyPromise: Promise<BrowserDpopKeyPair> | null = null;
+
+export function getBrowserDpopKeyPair(): Promise<BrowserDpopKeyPair> {
+  if (!cachedDpopKeyPromise) {
+    cachedDpopKeyPromise = (async () => {
+      const pair = await crypto.subtle.generateKey(
+        {
+          name: "ECDSA",
+          namedCurve: "P-256"
+        },
+        true,
+        ["sign", "verify"]
+      );
+      const exported = await crypto.subtle.exportKey("jwk", pair.publicKey);
+      const x = typeof exported.x === "string" ? exported.x : "";
+      const y = typeof exported.y === "string" ? exported.y : "";
+      const canonical = JSON.stringify({
+        crv: "P-256",
+        kty: "EC",
+        x,
+        y
+      });
+      const digest = await crypto.subtle.digest(
+        "SHA-256",
+        new TextEncoder().encode(canonical)
+      );
+      const jkt = bytesToBase64Url(new Uint8Array(digest));
+      return {
+        privateKey: pair.privateKey,
+        publicKey: pair.publicKey,
+        publicJwk: {
+          kty: "EC",
+          crv: "P-256",
+          x,
+          y
+        },
+        jkt
+      };
+    })();
+  }
+  return cachedDpopKeyPromise;
+}
+
+export async function createBrowserDpopProof(params: {
+  readonly accessToken: string;
+  readonly httpMethod: string;
+  readonly httpUrl: string;
+}): Promise<{ readonly dpopProof: string; readonly jkt: string; readonly jti: string }> {
+  const dpopKey = await getBrowserDpopKeyPair();
+  const athDigest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(params.accessToken)
+  );
+  const ath = bytesToBase64Url(new Uint8Array(athDigest));
+  const randomBytes = new Uint8Array(12);
+  crypto.getRandomValues(randomBytes);
+  const jti = `dpop_${bytesToBase64Url(randomBytes)}`;
+  const nowSec = Math.floor(Date.now() / 1000);
+
+  const header: Record<string, unknown> = {
+    alg: "ES256",
+    typ: "dpop+jwt",
+    jwk: dpopKey.publicJwk
+  };
+  const payload: Record<string, unknown> = {
+    htm: params.httpMethod.toUpperCase(),
+    htu: params.httpUrl,
+    iat: nowSec,
+    jti,
+    ath
+  };
+  const signingInput = `${encodeJsonSegment(header)}.${encodeJsonSegment(payload)}`;
+  const sigBuffer = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    dpopKey.privateKey,
+    new TextEncoder().encode(signingInput)
+  );
+  const dpopProof = `${signingInput}.${bytesToBase64Url(new Uint8Array(sigBuffer))}`;
+  return { dpopProof, jkt: dpopKey.jkt, jti };
+}
 
 export function getBrowserKeyRing(): Promise<BrowserKeyRing> {
   if (!cachedKeyRingPromise) {

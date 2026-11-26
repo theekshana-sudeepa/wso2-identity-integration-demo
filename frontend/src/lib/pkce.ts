@@ -1,5 +1,6 @@
 import { AGENT_TOKEN_MAX_TTL_SECONDS } from "./agentPolicy";
 import {
+  getBrowserDpopKeyPair,
   SIM_ACTIVE_KID,
   signBrowserRs256Jwt
 } from "./browserCrypto";
@@ -86,6 +87,8 @@ export interface DelegatedAgentSession {
   readonly expiresAtSec: number;
   readonly preset: IdpPreset;
   readonly stsMode?: StsMode;
+  readonly dpopJkt?: string;
+  readonly hasHumanApproval?: boolean;
 }
 
 export interface DecodedJwt {
@@ -608,6 +611,7 @@ export async function createSimulatedStsDelegatedSession(
   nowSecOverride?: number
 ): Promise<DelegatedAgentSession> {
   const base = createDelegatedAgentSession(humanClaims, config, nowSecOverride);
+  const dpopKey = await getBrowserDpopKeyPair();
   const payload: Record<string, unknown> = {
     sub: base.humanSubject,
     username: base.humanUsername,
@@ -615,6 +619,7 @@ export async function createSimulatedStsDelegatedSession(
     aud: base.audience,
     azp: base.actor.client_id,
     act: base.actor,
+    cnf: { jkt: dpopKey.jkt },
     scope: base.grantedScopes.join(" "),
     groups: ["delegated-agent-readonly"],
     delegation_depth: 1,
@@ -631,7 +636,9 @@ export async function createSimulatedStsDelegatedSession(
   return {
     ...base,
     accessToken: signedToken,
-    stsMode: "simulated-sts"
+    stsMode: "simulated-sts",
+    dpopJkt: dpopKey.jkt,
+    hasHumanApproval: false
   };
 }
 

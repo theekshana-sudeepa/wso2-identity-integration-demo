@@ -29,6 +29,7 @@ function createRsaKeyPair(kid: string): ManagedRsaKey {
 class DevIdpKeyStore {
   private readonly publishedKeys = new Map<string, ManagedRsaKey>();
   private readonly rogueKey: ManagedRsaKey;
+  private readonly revokedTokenHashes = new Set<string>();
   private activeKid: string;
   private rotatedKid: string;
   private rotationCounter = 1;
@@ -75,6 +76,29 @@ class DevIdpKeyStore {
   public resolvePublicKeyPem(kid: string | undefined): string | null {
     if (!kid) return null;
     return this.publishedKeys.get(kid)?.publicKeyPem ?? null;
+  }
+
+  public revokeToken(rawToken: string, jti?: string): void {
+    const hash = crypto.createHash("sha256").update(rawToken.trim(), "utf8").digest("base64url");
+    this.revokedTokenHashes.add(hash);
+    if (jti && jti.trim().length > 0) {
+      this.revokedTokenHashes.add(`jti:${jti.trim()}`);
+    }
+  }
+
+  public isTokenRevoked(rawToken: string, jti?: string): boolean {
+    const hash = crypto.createHash("sha256").update(rawToken.trim(), "utf8").digest("base64url");
+    if (this.revokedTokenHashes.has(hash)) {
+      return true;
+    }
+    if (jti && this.revokedTokenHashes.has(`jti:${jti.trim()}`)) {
+      return true;
+    }
+    return false;
+  }
+
+  public clearRevocations(): void {
+    this.revokedTokenHashes.clear();
   }
 
   public rotateKeys(): {

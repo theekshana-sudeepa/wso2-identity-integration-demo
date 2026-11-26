@@ -26,7 +26,11 @@ export type FaultId =
   | "jwt_alg_downgrade"
   | "jwks_kid_miss"
   | "aud_iss_spoof"
-  | "expired_token_skew";
+  | "expired_token_skew"
+  | "dpop_token_replay"
+  | "rfc8707_token_passthrough"
+  | "act_chain_violation"
+  | "unauthorized_actor_may_act";
 
 export type FaultState =
   | { readonly id: "none" }
@@ -38,7 +42,14 @@ export type FaultState =
       readonly resolution: "reject_unknown_kid" | "recover_rotated_key";
     }
   | { readonly id: "aud_iss_spoof"; readonly spoofTarget: "aud" | "iss" }
-  | { readonly id: "expired_token_skew"; readonly skewSeconds: number };
+  | { readonly id: "expired_token_skew"; readonly skewSeconds: number }
+  | { readonly id: "dpop_token_replay" }
+  | { readonly id: "rfc8707_token_passthrough" }
+  | {
+      readonly id: "act_chain_violation";
+      readonly variant: "depth_exceeded" | "cycle_detected";
+    }
+  | { readonly id: "unauthorized_actor_may_act" };
 
 export interface DefenseTrace {
   readonly layer: string;
@@ -164,6 +175,34 @@ export const FAULT_PRESETS: readonly FaultPresetOption[] = [
     rfc: "RFC 7519 §4.1.4",
     stageHint: "Stage 04 · exp",
     createDefaultState: () => ({ id: "expired_token_skew", skewSeconds: 185 })
+  },
+  {
+    id: "dpop_token_replay",
+    label: "Stolen Agent Token Replay (no DPoP key)",
+    rfc: "RFC 9449 §4.3",
+    stageHint: "Stage 06 · DPoP",
+    createDefaultState: () => ({ id: "dpop_token_replay" })
+  },
+  {
+    id: "rfc8707_token_passthrough",
+    label: "Token Passthrough to Wrong Resource",
+    rfc: "RFC 8707 §2",
+    stageHint: "Stage 06 · aud",
+    createDefaultState: () => ({ id: "rfc8707_token_passthrough" })
+  },
+  {
+    id: "act_chain_violation",
+    label: "Delegation Chain Too Deep / act Cycle",
+    rfc: "RFC 8693 §4.1",
+    stageHint: "Stage 06 · act",
+    createDefaultState: () => ({ id: "act_chain_violation", variant: "depth_exceeded" })
+  },
+  {
+    id: "unauthorized_actor_may_act",
+    label: "Unauthorized Actor (may_act violation)",
+    rfc: "RFC 8693 §4.4",
+    stageHint: "Stage 06 · STS",
+    createDefaultState: () => ({ id: "unauthorized_actor_may_act" })
   }
 ];
 
@@ -531,6 +570,220 @@ export function evaluateFaultScenario(
       };
     }
 
+    case "dpop_token_replay": {
+      const header: Record<string, unknown> = {
+        alg: "RS256",
+        typ: "at+jwt",
+        kid: presetMeta.demoKid
+      };
+      const payload: Record<string, unknown> = {
+        sub: baseSub,
+        username: baseUsername,
+        iss: config.issuer,
+        aud: config.mcpAudience,
+        act: {
+          sub: "agent:choreo-integrator-bot",
+          client_id: "choreo-mcp-agent-v1"
+        },
+        cnf: {
+          jkt: "dpop_bound_jkt_expected_2026"
+        },
+        scope: "orders:read",
+        iat: nowSec,
+        exp: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS
+      };
+      const mutatedToken = `${base64UrlEncodeJson(header)}.${base64UrlEncodeJson(payload)}.dpop_bound_obo_sig`;
+      return {
+        faultId: "dpop_token_replay",
+        active: true,
+        title: "Stolen Agent Token Replay (Missing RFC 9449 DPoP Proof)",
+        shortLabel: "DPoP Replay 401",
+        rfc: "RFC 9449 §4.3",
+        failingStage: "agent_mcp",
+        httpStatus: 401,
+        statusBadge: "401 invalid_dpop_proof",
+        isBlocked: true,
+        summary:
+          "Attacker exfiltrated a sender-constrained agent OBO token (bound to cnf.jkt) and replayed it without the agent's non-exportable ES256 private key.",
+        wirePayload: {
+          tokenConfirmationClaim: { cnf: { jkt: "dpop_bound_jkt_expected_2026" } },
+          dpopProofHeaderSent: null,
+          expectedDpopAlg: "ES256 (P-256)",
+          httpResponse: {
+            status: 401,
+            error: "invalid_dpop_proof"
+          }
+        },
+        mutatedToken,
+        defenseTrace: {
+          layer: "RFC 9449 DPoP Sender-Constrained Proof Guard",
+          middleware: "backend/src/middleware/dpopMiddleware.ts -> verifyDpopProof()",
+          rfc: "RFC 9449 §4.3 & §6.1 (cnf.jkt Proof-of-Possession)",
+          check: 'req.headers.dpop present && thumbprint(dpop.jwk) === token.cnf.jkt',
+          outcome: "REJECTED",
+          details:
+            "Stolen bearer token replay blocked: token carries cnf.jkt sender constraint, and attacker cannot forge an ES256 DPoP proof."
+        }
+      };
+    }
+
+    case "rfc8707_token_passthrough": {
+      const header: Record<string, unknown> = {
+        alg: "RS256",
+        typ: "JWT",
+        kid: presetMeta.demoKid
+      };
+      const payload: Record<string, unknown> = {
+        sub: baseSub,
+        username: baseUsername,
+        iss: config.issuer,
+        aud: config.audience,
+        act: {
+          sub: "agent:choreo-integrator-bot",
+          client_id: "choreo-mcp-agent-v1"
+        },
+        scope: "orders:read",
+        iat: nowSec,
+        exp: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS
+      };
+      const mutatedToken = `${base64UrlEncodeJson(header)}.${base64UrlEncodeJson(payload)}.passthrough_wrong_aud_sig`;
+      return {
+        faultId: "rfc8707_token_passthrough",
+        active: true,
+        title: "Token Passthrough to Wrong Resource (RFC 8707 Violation)",
+        shortLabel: "Passthrough 401",
+        rfc: "RFC 8707 §2",
+        failingStage: "agent_mcp",
+        httpStatus: 401,
+        statusBadge: "401 invalid_audience",
+        isBlocked: true,
+        summary:
+          "Client or upstream service passed a human-API-audience token directly to the MCP Gateway instead of performing an RFC 8693 + RFC 8707 resource-scoped exchange.",
+        wirePayload: {
+          presentedTokenAudience: config.audience,
+          requiredMcpGatewayResourceUri: config.mcpAudience,
+          tokenPassthroughPrevented: true,
+          httpResponse: {
+            status: 401,
+            error: "invalid_audience"
+          }
+        },
+        mutatedToken,
+        defenseTrace: {
+          layer: "MCP Gateway Canonical Resource Audience Guard",
+          middleware: "backend/src/routes/mcpRoutes.ts -> createAuthMiddleware({ audience: MCP_AUDIENCE })",
+          rfc: "RFC 8707 §2 + MCP Auth Spec (No Token Passthrough)",
+          check: `jwt.aud ("${config.audience}") === mcpCanonicalUri ("${config.mcpAudience}")`,
+          outcome: "REJECTED",
+          details: `Rejected token passthrough: token was minted for "${config.audience}", not the MCP Gateway resource "${config.mcpAudience}".`
+        }
+      };
+    }
+
+    case "act_chain_violation": {
+      const isCycle = fault.variant === "cycle_detected";
+      const badAct = isCycle
+        ? {
+            sub: "agent:a",
+            client_id: "choreo-mcp-agent-v1",
+            act: { sub: "agent:a", client_id: "choreo-mcp-agent-v1" }
+          }
+        : {
+            sub: "agent:leaf",
+            act: {
+              sub: "agent:mid",
+              act: { sub: "agent:root" }
+            }
+          };
+      const header: Record<string, unknown> = {
+        alg: "RS256",
+        typ: "at+jwt",
+        kid: presetMeta.demoKid
+      };
+      const payload: Record<string, unknown> = {
+        sub: baseSub,
+        username: baseUsername,
+        iss: config.issuer,
+        aud: config.mcpAudience,
+        act: badAct,
+        scope: "orders:read",
+        iat: nowSec,
+        exp: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS
+      };
+      const mutatedToken = `${base64UrlEncodeJson(header)}.${base64UrlEncodeJson(payload)}.act_chain_violation_sig`;
+      return {
+        faultId: "act_chain_violation",
+        active: true,
+        title: isCycle
+          ? "Delegation Actor Cycle Detected (agent:a -> agent:a)"
+          : "Delegation Chain Depth Exceeded (Depth 3 > Max 2)",
+        shortLabel: isCycle ? "act Cycle 403" : "act Depth 403",
+        rfc: "RFC 8693 §4.1",
+        failingStage: "agent_mcp",
+        httpStatus: 403,
+        statusBadge: isCycle ? "403 cycle_detected" : "403 chain_too_deep",
+        isBlocked: true,
+        summary: isCycle
+          ? "Nested act claim contains a circular delegation hop where an actor delegates back to itself."
+          : "Multi-agent orchestration exceeded MAX_DELEGATION_DEPTH (2 hops), blocking unbounded sub-agent chaining.",
+        wirePayload: {
+          maxDelegationDepth: 2,
+          injectedActChain: badAct,
+          httpResponse: {
+            status: 403,
+            error: isCycle ? "delegation_cycle_detected" : "delegation_chain_too_deep"
+          }
+        },
+        mutatedToken,
+        defenseTrace: {
+          layer: "RFC 8693 Delegation Chain Guard",
+          middleware: "backend/src/middleware/delegationPolicy.ts -> evaluateActChain()",
+          rfc: "RFC 8693 §4.1 (Nested act Claim)",
+          check: isCycle ? "evaluateActChain(acyclic actor chain)" : "evaluateActChain(depth <= 2)",
+          outcome: "REJECTED",
+          details: isCycle
+            ? 'Delegation cycle detected involving actor "agent:a".'
+            : "Delegation chain depth (3) exceeds maximum allowed depth (2)."
+        }
+      };
+    }
+
+    case "unauthorized_actor_may_act": {
+      return {
+        faultId: "unauthorized_actor_may_act",
+        active: true,
+        title: "Unauthorized Actor (RFC 8693 §4.4 may_act Violation)",
+        shortLabel: "may_act 400",
+        rfc: "RFC 8693 §4.4",
+        failingStage: "idp",
+        httpStatus: 400,
+        statusBadge: "400 unauthorized_client",
+        isBlocked: true,
+        summary:
+          "An unapproved third-party AI agent attempted an OBO token exchange using the human's subject_token, but is not listed in the token's may_act policy claim.",
+        wirePayload: {
+          endpoint: `POST ${config.backendApiUrl}/dev-idp/oauth2/token`,
+          grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+          subjectTokenMayAct: { sub: "agent:choreo-integrator-bot" },
+          requestingActorToken: "agent:unlisted-rogue-bot",
+          stsResponse: {
+            status: 400,
+            error: "unauthorized_client"
+          }
+        },
+        mutatedToken: null,
+        defenseTrace: {
+          layer: "STS RFC 8693 §4.4 may_act Guard",
+          middleware: "backend/src/devIdp/devIdpRouter.ts -> evaluateMayAct()",
+          rfc: "RFC 8693 §4.4 (may_act Authorized Actor Claim)",
+          check: 'verify(subject_token.may_act allows "agent:unlisted-rogue-bot")',
+          outcome: "REJECTED",
+          details:
+            'Actor "agent:unlisted-rogue-bot" is not authorized by subject_token may_act claim (actor_not_listed).'
+        }
+      };
+    }
+
     default:
       return assertNever(fault);
   }
@@ -624,6 +877,72 @@ export async function mintSimulatedFaultToken(
         "active"
       );
     }
+
+    case "dpop_token_replay": {
+      return signBrowserRs256Jwt(
+        { alg: "RS256", typ: "at+jwt", kid: SIM_ACTIVE_KID },
+        {
+          ...basePayload,
+          aud: config.mcpAudience,
+          act: {
+            sub: "agent:choreo-integrator-bot",
+            client_id: "choreo-mcp-agent-v1"
+          },
+          cnf: {
+            jkt: "dpop_bound_jkt_expected_2026"
+          },
+          scope: "orders:read",
+          iat: nowSec,
+          exp: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS
+        },
+        "active"
+      );
+    }
+
+    case "rfc8707_token_passthrough": {
+      return signBrowserRs256Jwt(
+        { alg: "RS256", typ: "JWT", kid: SIM_ACTIVE_KID },
+        {
+          ...basePayload,
+          aud: config.audience,
+          act: {
+            sub: "agent:choreo-integrator-bot",
+            client_id: "choreo-mcp-agent-v1"
+          },
+          scope: "orders:read",
+          iat: nowSec,
+          exp: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS
+        },
+        "active"
+      );
+    }
+
+    case "act_chain_violation": {
+      const isCycle = fault.variant === "cycle_detected";
+      return signBrowserRs256Jwt(
+        { alg: "RS256", typ: "at+jwt", kid: SIM_ACTIVE_KID },
+        {
+          ...basePayload,
+          aud: config.mcpAudience,
+          act: isCycle
+            ? {
+                sub: "agent:a",
+                act: { sub: "agent:a" }
+              }
+            : {
+                sub: "agent:leaf",
+                act: { sub: "agent:mid", act: { sub: "agent:root" } }
+              },
+          scope: "orders:read",
+          iat: nowSec,
+          exp: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS
+        },
+        "active"
+      );
+    }
+
+    case "unauthorized_actor_may_act":
+      return null;
 
     default:
       return assertNever(fault);

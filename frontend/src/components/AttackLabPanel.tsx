@@ -192,6 +192,32 @@ export const AttackLabPanel = memo(function AttackLabPanel({
             </div>
           )}
 
+          {activeFault.id === "act_chain_violation" && (
+            <div className="fault-subcontrols">
+              <span className="subcontrol-label">RFC 8693 §4.1 Nested act Violation Mode:</span>
+              <div className="segmented-tabs">
+                <button
+                  type="button"
+                  className={`seg-tab ${activeFault.variant === "depth_exceeded" ? "seg-tab-active" : ""}`}
+                  onClick={() =>
+                    onChangeFault({ id: "act_chain_violation", variant: "depth_exceeded" })
+                  }
+                >
+                  Depth &gt; 2 (403 Chain Too Deep)
+                </button>
+                <button
+                  type="button"
+                  className={`seg-tab ${activeFault.variant === "cycle_detected" ? "seg-tab-active" : ""}`}
+                  onClick={() =>
+                    onChangeFault({ id: "act_chain_violation", variant: "cycle_detected" })
+                  }
+                >
+                  Actor Cycle agent:a -&gt; agent:a (403)
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Structured Defense Trace */}
           <div
             className={`defense-trace-card ${

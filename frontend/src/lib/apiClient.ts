@@ -1,5 +1,12 @@
 import { AGENT_TOKEN_MAX_TTL_SECONDS } from "./agentPolicy";
-import { verifyBrowserRs256Jwt } from "./browserCrypto";
+import {
+  getBrowserDpopKeyPair,
+  isSimulatedTokenRevoked,
+  revokeSimulatedToken,
+  SIM_ACTIVE_KID,
+  signBrowserRs256Jwt,
+  verifyBrowserRs256Jwt
+} from "./browserCrypto";
 import {
   decodeJwt,
   generateLivePkceTelemetry,
@@ -25,7 +32,17 @@ import {
 
 export type HttpMethod = "GET" | "POST";
 export type ExecutionMode = "live" | "dry-run";
+export type VerificationMode = "jwks" | "introspect";
 export type PolicyKind = "public" | "jwt" | "role" | "scope";
+
+export interface PendingCibaRequest {
+  readonly authReqId: string;
+  readonly bindingMessage: string;
+  readonly tool: "export_all_users";
+  readonly actorSub: string;
+  readonly sub: string;
+  readonly expiresIn: number;
+}
 
 export interface ApiEndpointSpec {
   readonly id: string;
@@ -269,11 +286,13 @@ export async function invokeProtectedApi(
   endpoint: string,
   method: HttpMethod,
   accessToken?: string,
-  body?: Record<string, unknown>
+  body?: Record<string, unknown>,
+  extraHeaders?: Readonly<Record<string, string>>
 ): Promise<ApiCallResult> {
   const startedAt = performance.now();
   const headers: Record<string, string> = {
-    Accept: "application/json"
+    Accept: "application/json",
+    ...(extraHeaders ?? {})
   };
 
   if (accessToken) {
@@ -779,6 +798,56 @@ export function simulateMcpToolCall(
     }
 
     case "export_all_users": {
+      if (delegatedSession.hasHumanApproval && delegatedSession.grantedScopes.includes("users:export")) {
+        recordSimulatedMcpAudit({
+          timestamp: nowIso,
+          sub: delegatedSession.humanSubject,
+          actorSub: delegatedSession.actor.sub,
+          tool: toolSpec.name,
+          riskTier: "high_risk_pii",
+          decision: "ALLOWED",
+          status: 200,
+          reason: "ciba_step_up_approved",
+          jti: `sim_jti_ciba_${nowSec}`
+        });
+        const defenseTrace: DefenseTrace = {
+          layer: "MCP Human-in-the-Loop Step-Up Guard",
+          middleware: "backend/src/mcp/toolRegistry.ts -> cibaApprovalStore.verifyAndConsumeApprovalToken()",
+          rfc: "RFC 8693 + CIBA Step-Up Human Consent",
+          check: 'verify(human_approval_token && scopes.includes("users:export"))',
+          outcome: "ALLOWED",
+          details: `Verified one-time CIBA human approval token for "${delegatedSession.humanSubject}" with step-up scope "users:export".`
+        };
+        return {
+          endpoint,
+          method: "POST",
+          status: 200,
+          latencyMs: 4,
+          ok: true,
+          mode: "dry-run",
+          defenseTrace,
+          timestamp: nowIso,
+          data: {
+            jsonrpc: "2.0",
+            id: 1,
+            protocol: "MCP JSON-RPC 2.0 · tools/call · CIBA Step-Up",
+            tool: toolSpec.name,
+            status: "ALLOWED",
+            delegatedBy: delegatedSession.humanSubject,
+            actor: delegatedSession.actor,
+            grantedScopes: delegatedSession.grantedScopes,
+            result: {
+              exportJobId: "exp_verified_ciba_stepup",
+              status: "QUEUED",
+              format: "csv"
+            },
+            defenseTrace,
+            policyEvaluation: "SIMULATED_STS_WEB_CRYPTO_RS256"
+          }
+        };
+      }
+
+      const simAuthReqId = `ciba_sim_${nowSec}`;
       recordSimulatedMcpAudit({
         timestamp: nowIso,
         sub: delegatedSession.humanSubject,
@@ -792,7 +861,7 @@ export function simulateMcpToolCall(
       });
       const defenseTrace: DefenseTrace = {
         layer: "MCP Human-in-the-Loop Step-Up Guard",
-        middleware: "backend/src/middleware/rbacMiddleware.ts -> evaluateMcpToolAuthorization()",
+        middleware: "backend/src/mcp/toolRegistry.ts -> evaluateRegisteredMcpToolPolicy()",
         rfc: "RFC 8693 + Step-Up Human Consent",
         check: 'verify(human_approval_token && scopes.includes("users:export"))',
         outcome: "REJECTED",
@@ -817,6 +886,9 @@ export function simulateMcpToolCall(
           grantedScopes: delegatedSession.grantedScopes,
           delegatedBy: delegatedSession.humanSubject,
           actor: delegatedSession.actor,
+          auth_req_id: simAuthReqId,
+          binding_message: `Approve high-risk tool "export_all_users" (users:export) requested by ${delegatedSession.actor.sub}`,
+          expires_in: 120,
           defenseTrace,
           policyEvaluation: "BROWSER_SIMULATION_MODE"
         }
@@ -895,6 +967,7 @@ export async function exchangeDevIdpOboToken(
   config: OidcConfig,
   humanClaims: ParsedJwtClaims | null
 ): Promise<DelegatedAgentSession> {
+  const dpopKey = await getBrowserDpopKeyPair();
   const res = await fetch(`${baseUrl}/dev-idp/oauth2/token`, {
     method: "POST",
     headers: {
@@ -906,7 +979,8 @@ export async function exchangeDevIdpOboToken(
       subject_token: subjectToken,
       actor_token: "agent:choreo-integrator-bot",
       resource: config.mcpAudience,
-      scope: "orders:read"
+      scope: "orders:read",
+      dpop_jkt: dpopKey.jkt
     })
   });
   const raw: unknown = await res.json();
@@ -951,8 +1025,150 @@ export async function exchangeDevIdpOboToken(
     issuedAtSec,
     expiresAtSec,
     preset: config.preset,
-    stsMode: "dev-idp"
+    stsMode: "dev-idp",
+    dpopJkt: dpopKey.jkt,
+    hasHumanApproval: false
   };
+}
+
+export async function submitCibaApprovalDecision(params: {
+  readonly baseUrl: string;
+  readonly authReqId: string;
+  readonly decision: "APPROVED" | "DENIED";
+  readonly delegatedSession: DelegatedAgentSession;
+  readonly config: OidcConfig;
+  readonly useLiveDevIdp: boolean;
+}): Promise<{
+  readonly approved: boolean;
+  readonly updatedSession?: DelegatedAgentSession;
+}> {
+  const { baseUrl, authReqId, decision, delegatedSession, config, useLiveDevIdp } = params;
+  if (decision === "DENIED") {
+    if (useLiveDevIdp) {
+      await fetch(`${baseUrl}/dev-idp/oauth2/ciba/decide`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          auth_req_id: authReqId,
+          decision: "DENIED"
+        })
+      }).catch(() => undefined);
+    }
+    return { approved: false };
+  }
+
+  const dpopKey = await getBrowserDpopKeyPair();
+  if (useLiveDevIdp) {
+    const res = await fetch(`${baseUrl}/dev-idp/oauth2/ciba/decide`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        auth_req_id: authReqId,
+        decision: "APPROVED",
+        dpop_jkt: dpopKey.jkt
+      })
+    });
+    const raw: unknown = await res.json();
+    if (res.ok && isRecord(raw) && typeof raw.access_token === "string") {
+      const nowSec = Math.floor(Date.now() / 1000);
+      return {
+        approved: true,
+        updatedSession: {
+          ...delegatedSession,
+          accessToken: raw.access_token,
+          grantedScopes: ["orders:read", "users:export"],
+          issuedAtSec: nowSec,
+          expiresAtSec: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS,
+          dpopJkt: dpopKey.jkt,
+          hasHumanApproval: true
+        }
+      };
+    }
+  }
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  const stepUpPayload: Record<string, unknown> = {
+    sub: delegatedSession.humanSubject,
+    username: delegatedSession.humanUsername,
+    iss: config.issuer,
+    aud: config.mcpAudience,
+    azp: delegatedSession.actor.client_id,
+    act: delegatedSession.actor,
+    cnf: { jkt: dpopKey.jkt },
+    scope: "orders:read users:export",
+    groups: ["delegated-agent-stepup"],
+    delegation_depth: 1,
+    human_approval_token: `hat_sim_${authReqId}`,
+    approval: {
+      auth_req_id: authReqId,
+      tool: "export_all_users",
+      approved_by: delegatedSession.humanSubject,
+      expires_at: nowSec + 120
+    },
+    iat: nowSec,
+    exp: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS
+  };
+  const stepUpJwt = await signBrowserRs256Jwt(
+    { alg: "RS256", typ: "at+jwt", kid: SIM_ACTIVE_KID },
+    stepUpPayload,
+    "active"
+  );
+  return {
+    approved: true,
+    updatedSession: {
+      ...delegatedSession,
+      accessToken: stepUpJwt,
+      grantedScopes: ["orders:read", "users:export"],
+      issuedAtSec: nowSec,
+      expiresAtSec: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS,
+      dpopJkt: dpopKey.jkt,
+      hasHumanApproval: true
+    }
+  };
+}
+
+export async function revokeActiveToken(
+  baseUrl: string,
+  token: string,
+  useLiveDevIdp: boolean
+): Promise<void> {
+  revokeSimulatedToken(token);
+  if (useLiveDevIdp) {
+    await fetch(`${baseUrl}/dev-idp/oauth2/revoke`, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({ token })
+    }).catch(() => undefined);
+  }
+}
+
+export async function probeDevIdpUnauthorizedActor(
+  baseUrl: string,
+  subjectToken: string,
+  mcpAudience: string
+): Promise<ApiCallResult> {
+  return invokeProtectedApi(
+    baseUrl,
+    "/dev-idp/oauth2/token",
+    "POST",
+    undefined,
+    {
+      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+      subject_token: subjectToken,
+      actor_token: "agent:unlisted-rogue-bot",
+      resource: mcpAudience,
+      scope: "orders:read"
+    }
+  );
 }
 
 export async function requestDevIdpFaultToken(
@@ -1035,7 +1251,8 @@ export async function simulateVerifiedRbacPolicyCall(
   session: TokenSession | null,
   claims: ParsedJwtClaims | null,
   activeFault?: FaultState,
-  pkceTelemetry?: PkceTelemetry | null
+  pkceTelemetry?: PkceTelemetry | null,
+  verificationMode: VerificationMode = "jwks"
 ): Promise<ApiCallResult> {
   const nowSec = Math.floor(Date.now() / 1000);
   const nowIso = new Date(nowSec * 1000).toISOString();
@@ -1046,7 +1263,12 @@ export async function simulateVerifiedRbacPolicyCall(
 
   if (
     activeFault &&
-    (activeFault.id === "pkce_verifier_mismatch" || activeFault.id === "csrf_state_mismatch")
+    (activeFault.id === "pkce_verifier_mismatch" ||
+      activeFault.id === "csrf_state_mismatch" ||
+      activeFault.id === "dpop_token_replay" ||
+      activeFault.id === "rfc8707_token_passthrough" ||
+      activeFault.id === "act_chain_violation" ||
+      activeFault.id === "unauthorized_actor_may_act")
   ) {
     return simulateRbacPolicyCall(spec, config, session, claims, activeFault);
   }
@@ -1093,6 +1315,37 @@ export async function simulateVerifiedRbacPolicyCall(
     };
   }
 
+  if (verificationMode === "introspect" && isSimulatedTokenRevoked(tokenToVerify)) {
+    const revokeTrace: DefenseTrace = {
+      layer: "RFC 7662 Stateful Token Introspection Guard",
+      middleware: "frontend/src/lib/apiClient.ts -> introspect(token)",
+      rfc: "RFC 7662 §2.2 (Introspection Response active: false)",
+      check: "introspect(token).active === true",
+      outcome: "REJECTED",
+      details:
+        "Stateful introspection (+1 IdP hop) detected real-time revocation before exp, whereas stateless JWKS verification continues accepting the token until exp."
+    };
+    return {
+      endpoint: spec.path,
+      method: spec.method,
+      status: 401,
+      latencyMs: 14,
+      ok: false,
+      mode: "dry-run",
+      defenseTrace: revokeTrace,
+      timestamp: nowIso,
+      data: {
+        error: "token_revoked",
+        status: 401,
+        verificationMode: "introspect",
+        message:
+          "Token was revoked via RFC 7009 and detected as active=false by RFC 7662 Token Introspection.",
+        defenseTrace: revokeTrace,
+        policyEvaluation: "SIMULATED_STS_WEB_CRYPTO_RS256"
+      }
+    };
+  }
+
   const verifiedDecoded = decodeJwt(tokenToVerify);
   const verifiedClaims = verifiedDecoded ? parseJwtClaims(verifiedDecoded) : claims;
   const rbacResult = simulateRbacPolicyCall(spec, config, session, verifiedClaims);
@@ -1124,7 +1377,11 @@ export async function simulateVerifiedMcpToolCall(
 
   if (
     activeFault &&
-    (activeFault.id === "pkce_verifier_mismatch" || activeFault.id === "csrf_state_mismatch")
+    (activeFault.id === "pkce_verifier_mismatch" ||
+      activeFault.id === "csrf_state_mismatch" ||
+      activeFault.id === "dpop_token_replay" ||
+      activeFault.id === "act_chain_violation" ||
+      activeFault.id === "unauthorized_actor_may_act")
   ) {
     return simulateMcpToolCall(toolSpec, delegatedSession, config, activeFault, nowSec);
   }

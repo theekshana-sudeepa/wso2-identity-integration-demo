@@ -14,16 +14,22 @@ import {
   getSimulatedMcpAuditLog,
   invokeProtectedApi,
   probeDevIdpPkceMismatch,
+  probeDevIdpUnauthorizedActor,
   requestDevIdpFaultToken,
+  revokeActiveToken,
   simulateRbacPolicyCall,
   simulateVerifiedMcpToolCall,
   simulateVerifiedRbacPolicyCall,
+  submitCibaApprovalDecision,
   type ApiCallResult,
   type ApiEndpointSpec,
   type BackendHealthStatus,
   type ExecutionMode,
-  type McpAuditEntry
+  type McpAuditEntry,
+  type PendingCibaRequest,
+  type VerificationMode
 } from "./lib/apiClient";
+import { createBrowserDpopProof } from "./lib/browserCrypto";
 import {
   clearSession,
   createDelegatedAgentSession,
@@ -36,6 +42,7 @@ import {
   getOidcConfig,
   handleOidcCallback,
   initiateWso2Login,
+  isRecord,
   loadSession,
   parseJwtClaims,
   type DelegatedAgentSession,
@@ -99,6 +106,9 @@ export function App() {
 
   const [delegatedSession, setDelegatedSession] = useState<DelegatedAgentSession | null>(null);
   const [mcpAuditEntries, setMcpAuditEntries] = useState<readonly McpAuditEntry[]>([]);
+  const [pendingCibaRequest, setPendingCibaRequest] = useState<PendingCibaRequest | null>(null);
+  const [verificationMode, setVerificationMode] = useState<VerificationMode>("jwks");
+  const [tokenRevoked, setTokenRevoked] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [exporterOpen, setExporterOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -406,6 +416,8 @@ export function App() {
         demoSession = createDemoSession(role, config);
       }
       setSession(demoSession);
+      setTokenRevoked(false);
+      setPendingCibaRequest(null);
 
       const dec = decodeJwt(demoSession.accessToken);
       const parsedClaims = dec ? parseJwtClaims(dec) : null;
@@ -447,11 +459,40 @@ export function App() {
     clearSession();
     setSession(null);
     setDelegatedSession(null);
+    setPendingCibaRequest(null);
+    setTokenRevoked(false);
     setApiResult(null);
     setLastMcpResult(null);
     setAuthError(null);
     showToast("Cleared active OIDC session");
   }, [showToast]);
+
+  const handleRevokeToken = useCallback(async () => {
+    let activeSession = session;
+    const useLiveDevIdp =
+      executionMode === "live" &&
+      backendHealth.reachable &&
+      backendHealth.devIdpEnabled === true;
+    if (!activeSession) {
+      activeSession = useLiveDevIdp
+        ? await exchangeDevIdpPersonaToken(config.backendApiUrl, "user", config, pkceTelemetry)
+        : await createSimulatedStsDemoSession("user", config);
+      setSession(activeSession);
+    }
+    await revokeActiveToken(config.backendApiUrl, activeSession.accessToken, useLiveDevIdp);
+    setTokenRevoked(true);
+    showToast(
+      "Token revoked via RFC 7009 — test Stateless JWKS (200) vs RFC 7662 Introspection (401)"
+    );
+  }, [
+    backendHealth.devIdpEnabled,
+    backendHealth.reachable,
+    config,
+    executionMode,
+    pkceTelemetry,
+    session,
+    showToast
+  ]);
 
   const handleInvokeEndpoint = useCallback(
     async (spec: ApiEndpointSpec) => {
@@ -479,7 +520,8 @@ export function App() {
             activeSession,
             activeClaims,
             activeFault,
-            pkceTelemetry
+            pkceTelemetry,
+            verificationMode
           );
           setApiResult(simulated);
         } else {
@@ -518,6 +560,20 @@ export function App() {
             setSession(activeSession);
           }
 
+          if (
+            activeFault.id === "unauthorized_actor_may_act" &&
+            backendHealth.devIdpEnabled &&
+            activeSession
+          ) {
+            const mayActRes = await probeDevIdpUnauthorizedActor(
+              config.backendApiUrl,
+              activeSession.accessToken,
+              config.mcpAudience
+            );
+            setApiResult(mayActRes);
+            return;
+          }
+
           let tokenToSend = activeSession?.accessToken;
           if (activeFault.id !== "none") {
             const liveFaultToken = backendHealth.devIdpEnabled
@@ -536,7 +592,8 @@ export function App() {
             spec.path,
             spec.method,
             tokenToSend,
-            spec.defaultBody
+            spec.defaultBody,
+            { "X-Verification-Mode": verificationMode }
           );
           setApiResult(liveResult);
         }
@@ -553,8 +610,39 @@ export function App() {
       executionMode,
       faultEval.mutatedToken,
       pkceTelemetry,
-      session
+      session,
+      verificationMode
     ]
+  );
+
+  const extractPendingCibaFromResult = useCallback(
+    (result: ApiCallResult, activeObo: DelegatedAgentSession) => {
+      if (result.status !== 403 || !isRecord(result.data)) {
+        return;
+      }
+      const dataObj = result.data;
+      if (dataObj.error === "human_approval_required") {
+        const authReqId =
+          typeof dataObj.auth_req_id === "string"
+            ? dataObj.auth_req_id
+            : `ciba_sim_${Date.now()}`;
+        const bindingMessage =
+          typeof dataObj.binding_message === "string"
+            ? dataObj.binding_message
+            : `Approve high-risk tool "export_all_users" (users:export) requested by ${activeObo.actor.sub}`;
+        const expiresIn =
+          typeof dataObj.expires_in === "number" ? dataObj.expires_in : 120;
+        setPendingCibaRequest({
+          authReqId,
+          bindingMessage,
+          tool: "export_all_users",
+          actorSub: activeObo.actor.sub,
+          sub: activeObo.humanSubject,
+          expiresIn
+        });
+      }
+    },
+    []
   );
 
   const handleInvokeMcpTool = useCallback(
@@ -581,6 +669,7 @@ export function App() {
           setLastMcpResult(simulated);
           setApiResult(simulated);
           setMcpAuditEntries(getSimulatedMcpAuditLog());
+          extractPendingCibaFromResult(simulated, activeObo);
         } else {
           if (activeFault.id === "pkce_verifier_mismatch" && backendHealth.devIdpEnabled) {
             const pkceMismatchResult = await probeDevIdpPkceMismatch(
@@ -608,6 +697,22 @@ export function App() {
             setSession(activeSession);
             const dec = decodeJwt(activeSession.accessToken);
             activeClaims = dec ? parseJwtClaims(dec) : null;
+          }
+
+          if (
+            activeFault.id === "unauthorized_actor_may_act" &&
+            backendHealth.devIdpEnabled &&
+            activeSession
+          ) {
+            const mayActRes = await probeDevIdpUnauthorizedActor(
+              config.backendApiUrl,
+              activeSession.accessToken,
+              config.mcpAudience
+            );
+            setLastMcpResult(mayActRes);
+            setApiResult(mayActRes);
+            setSelectedStage("agent_mcp");
+            return;
           }
 
           let activeObo = delegatedSession;
@@ -641,6 +746,16 @@ export function App() {
             tokenToSend = liveFaultToken ?? faultEval.mutatedToken ?? tokenToSend;
           }
 
+          let extraHeaders: Record<string, string> | undefined;
+          if (activeFault.id !== "dpop_token_replay") {
+            const dpop = await createBrowserDpopProof({
+              accessToken: tokenToSend,
+              httpMethod: "POST",
+              httpUrl: `${config.backendApiUrl}/api/mcp`
+            });
+            extraHeaders = { DPoP: dpop.dpopProof };
+          }
+
           const liveResult = await invokeProtectedApi(
             config.backendApiUrl,
             "/api/mcp",
@@ -654,12 +769,14 @@ export function App() {
                 name: toolSpec.name,
                 arguments: toolSpec.sampleArguments
               }
-            }
+            },
+            extraHeaders
           );
           setLastMcpResult(liveResult);
           setApiResult(liveResult);
           const freshAudit = await fetchMcpAuditLog(config.backendApiUrl);
           setMcpAuditEntries(freshAudit);
+          extractPendingCibaFromResult(liveResult, activeObo);
         }
         setSelectedStage("agent_mcp");
       } finally {
@@ -674,9 +791,108 @@ export function App() {
       config,
       delegatedSession,
       executionMode,
+      extractPendingCibaFromResult,
       faultEval.mutatedToken,
       pkceTelemetry,
       session
+    ]
+  );
+
+  const handleDecisionCiba = useCallback(
+    async (decision: "APPROVED" | "DENIED") => {
+      if (!pendingCibaRequest || !delegatedSession) {
+        return;
+      }
+      const reqId = pendingCibaRequest.authReqId;
+      setPendingCibaRequest(null);
+
+      const useLiveDevIdp =
+        executionMode === "live" &&
+        backendHealth.reachable &&
+        backendHealth.devIdpEnabled === true;
+
+      const outcome = await submitCibaApprovalDecision({
+        baseUrl: config.backendApiUrl,
+        authReqId: reqId,
+        decision,
+        delegatedSession,
+        config,
+        useLiveDevIdp
+      });
+
+      if (!outcome.approved || !outcome.updatedSession) {
+        showToast("CIBA Step-Up Consent Denied by Human Principal");
+        return;
+      }
+
+      const stepUpObo = outcome.updatedSession;
+      setDelegatedSession(stepUpObo);
+      showToast("CIBA Step-Up Approved — Retrying export_all_users with one-time consent");
+
+      const exportToolSpec: McpToolSpec = {
+        name: "export_all_users",
+        commandLabel: "tools/call: export_all_users",
+        requiredScope: "users:export",
+        requiresHumanApproval: true,
+        expectedVerdict: "403 Human Approval",
+        description: "Bulk PII export with verified CIBA step-up human approval",
+        sampleArguments: { format: "csv", includePii: true }
+      };
+
+      setMcpLoadingTool("export_all_users");
+      try {
+        if (!useLiveDevIdp) {
+          const simulated = await simulateVerifiedMcpToolCall(
+            exportToolSpec,
+            stepUpObo,
+            config,
+            activeFault,
+            pkceTelemetry
+          );
+          setLastMcpResult(simulated);
+          setApiResult(simulated);
+          setMcpAuditEntries(getSimulatedMcpAuditLog());
+        } else {
+          const dpop = await createBrowserDpopProof({
+            accessToken: stepUpObo.accessToken,
+            httpMethod: "POST",
+            httpUrl: `${config.backendApiUrl}/api/mcp`
+          });
+          const liveResult = await invokeProtectedApi(
+            config.backendApiUrl,
+            "/api/mcp",
+            "POST",
+            stepUpObo.accessToken,
+            {
+              jsonrpc: "2.0",
+              id: Date.now(),
+              method: "tools/call",
+              params: {
+                name: "export_all_users",
+                arguments: exportToolSpec.sampleArguments
+              }
+            },
+            { DPoP: dpop.dpopProof }
+          );
+          setLastMcpResult(liveResult);
+          setApiResult(liveResult);
+          const freshAudit = await fetchMcpAuditLog(config.backendApiUrl);
+          setMcpAuditEntries(freshAudit);
+        }
+      } finally {
+        setMcpLoadingTool(null);
+      }
+    },
+    [
+      activeFault,
+      backendHealth.devIdpEnabled,
+      backendHealth.reachable,
+      config,
+      delegatedSession,
+      executionMode,
+      pendingCibaRequest,
+      pkceTelemetry,
+      showToast
     ]
   );
 
@@ -1009,12 +1225,18 @@ export function App() {
             attackLabOpen={attackLabOpen}
             mcpLoadingTool={mcpLoadingTool}
             mcpAuditEntries={mcpAuditEntries}
+            pendingCibaRequest={pendingCibaRequest}
+            verificationMode={verificationMode}
+            tokenRevoked={tokenRevoked}
             onSelectStage={setSelectedStage}
             onChangeFault={handleChangeFault}
             onToggleAttackLab={toggleAttackLab}
             onRegeneratePkce={regeneratePkce}
             onRefreshDelegatedToken={handleRefreshDelegatedToken}
             onInvokeMcpTool={handleInvokeMcpTool}
+            onDecisionCiba={handleDecisionCiba}
+            onChangeVerificationMode={setVerificationMode}
+            onRevokeToken={handleRevokeToken}
             onOpenCodeExporter={openCodeExporter}
           />
 

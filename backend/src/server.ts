@@ -37,7 +37,7 @@ export function createApp(options?: CreateAppOptions): Express {
         callback(new Error(`Origin ${origin} is not allowed by CORS policy.`));
       },
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Authorization", "Content-Type"],
+      allowedHeaders: ["Authorization", "Content-Type", "DPoP", "X-Verification-Mode"],
       exposedHeaders: ["WWW-Authenticate"]
     })
   );

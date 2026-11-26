@@ -1,13 +1,16 @@
 import crypto from "node:crypto";
 import express, { type Router } from "express";
+import * as jose from "jose";
 import jwt from "jsonwebtoken";
 import { AGENT_TOKEN_MAX_TTL_SECONDS } from "../config/agentPolicy.js";
 import identityConfig from "../config/identityConfig.js";
+import { cibaApprovalStore } from "../mcp/cibaStore.js";
 import {
   evaluateActChain,
   evaluateMayAct,
   parseActorChain
 } from "../middleware/delegationPolicy.js";
+import { computeEcJwkThumbprint } from "../middleware/dpopMiddleware.js";
 import type { ActorClaim, DefenseTrace } from "../types/auth.js";
 import { devIdpKeyStore, ROGUE_UNTRUSTED_KID } from "./keyStore.js";
 import {
@@ -442,6 +445,22 @@ export function createDevIdpRouter(): Router {
 
       const nowSec = Math.floor(Date.now() / 1000);
       const ttlSeconds = AGENT_TOKEN_MAX_TTL_SECONDS;
+
+      let dpopJkt: string | null =
+        typeof body.dpop_jkt === "string" && body.dpop_jkt.trim().length > 0
+          ? body.dpop_jkt.trim()
+          : null;
+      if (!dpopJkt && typeof req.headers.dpop === "string") {
+        try {
+          const dpopHeader = jose.decodeProtectedHeader(req.headers.dpop.trim());
+          if (isRecord(dpopHeader.jwk)) {
+            dpopJkt = computeEcJwkThumbprint(dpopHeader.jwk);
+          }
+        } catch {
+          dpopJkt = null;
+        }
+      }
+
       const oboPayload: Record<string, unknown> = {
         sub: subjectSub,
         username:
@@ -457,6 +476,7 @@ export function createDevIdpRouter(): Router {
         delegation_depth: combinedChain.chain.length,
         original_scopes: subjectScopes,
         stripped_scopes: strippedScopes,
+        ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
         jti: `obo_${crypto.randomBytes(12).toString("base64url")}`,
         iat: nowSec,
         exp: nowSec + ttlSeconds
@@ -469,11 +489,12 @@ export function createDevIdpRouter(): Router {
       res.status(200).json({
         access_token: delegatedToken,
         issued_token_type: "urn:ietf:params:oauth:token-type:access_token",
-        token_type: "Bearer",
+        token_type: dpopJkt ? "DPoP" : "Bearer",
         expires_in: ttlSeconds,
         scope: requestedScopes.join(" "),
         audience: targetAudience,
         actor: newActor,
+        ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
         original_scopes: subjectScopes,
         stripped_scopes: strippedScopes,
         issued_at: nowSec,
@@ -486,6 +507,164 @@ export function createDevIdpRouter(): Router {
       error: "unsupported_grant_type",
       error_description: `Unsupported grant_type "${grantType}".`
     });
+  });
+
+  router.post("/oauth2/ciba/decide", async (req, res) => {
+    const body = isRecord(req.body) ? req.body : {};
+    const authReqId =
+      typeof body.auth_req_id === "string" ? body.auth_req_id.trim() : "";
+    const decision = body.decision === "DENIED" ? "DENIED" : "APPROVED";
+
+    if (!authReqId) {
+      res.status(400).json({
+        error: "invalid_request",
+        error_description: "Missing auth_req_id for CIBA step-up decision."
+      });
+      return;
+    }
+
+    const decided = cibaApprovalStore.decideRequest(authReqId, decision);
+    if (!decided) {
+      res.status(404).json({
+        error: "expired_token",
+        error_description: `CIBA request "${authReqId}" was not found.`
+      });
+      return;
+    }
+
+    if (decided.status === "DENIED") {
+      res.status(200).json({
+        status: "DENIED",
+        auth_req_id: decided.authReqId,
+        error: "access_denied",
+        error_description: "Human principal explicitly denied step-up consent."
+      });
+      return;
+    }
+
+    if (decided.status !== "APPROVED" || !decided.approvalToken) {
+      res.status(400).json({
+        error: "invalid_grant",
+        error_description: `CIBA request "${authReqId}" is in status "${decided.status}".`
+      });
+      return;
+    }
+
+    const nowSec = Math.floor(Date.now() / 1000);
+    const ttlSeconds = AGENT_TOKEN_MAX_TTL_SECONDS;
+    const dpopJkt =
+      typeof body.dpop_jkt === "string" && body.dpop_jkt.trim().length > 0
+        ? body.dpop_jkt.trim()
+        : null;
+
+    const actor: ActorClaim = {
+      sub: decided.actorSub,
+      client_id: "choreo-mcp-agent-v1",
+      delegation_protocol: "urn:ietf:params:oauth:grant-type:token-exchange"
+    };
+
+    const stepUpScopes = ["orders:read", decided.requiredScope];
+    const stepUpPayload: Record<string, unknown> = {
+      sub: decided.sub,
+      username: decided.sub,
+      iss: identityConfig.issuer,
+      aud: identityConfig.mcpAudience,
+      azp: actor.client_id,
+      act: actor,
+      scope: stepUpScopes.join(" "),
+      groups: ["delegated-agent-stepup"],
+      delegation_depth: 1,
+      human_approval_token: decided.approvalToken,
+      approval: {
+        auth_req_id: decided.authReqId,
+        tool: decided.tool,
+        bound_jti: decided.boundJti,
+        approved_by: decided.sub,
+        expires_at: decided.expiresAtSec
+      },
+      ...(dpopJkt ? { cnf: { jkt: dpopJkt } } : {}),
+      jti: `obo_ciba_${crypto.randomBytes(10).toString("base64url")}`,
+      iat: nowSec,
+      exp: nowSec + ttlSeconds
+    };
+
+    const stepUpJwt = await devIdpKeyStore.signRs256Jwt(stepUpPayload, {
+      typ: "at+jwt"
+    });
+
+    res.status(200).json({
+      status: "APPROVED",
+      auth_req_id: decided.authReqId,
+      approval_token: decided.approvalToken,
+      access_token: stepUpJwt,
+      token_type: dpopJkt ? "DPoP" : "Bearer",
+      expires_in: ttlSeconds,
+      scope: stepUpScopes.join(" "),
+      actor,
+      approval: stepUpPayload.approval
+    });
+  });
+
+  router.post("/oauth2/revoke", (req, res) => {
+    const body = isRecord(req.body) ? req.body : {};
+    const token = typeof body.token === "string" ? body.token.trim() : "";
+    if (!token) {
+      res.status(400).json({
+        error: "invalid_request",
+        error_description: "Missing token parameter for RFC 7009 revocation."
+      });
+      return;
+    }
+
+    let jti: string | undefined;
+    try {
+      const decoded = jose.decodeJwt(token);
+      if (typeof decoded.jti === "string") {
+        jti = decoded.jti;
+      }
+    } catch {
+      jti = undefined;
+    }
+
+    devIdpKeyStore.revokeToken(token, jti);
+    res.status(200).json({
+      revoked: true,
+      jti: jti ?? null,
+      rfc: "RFC 7009 (OAuth 2.0 Token Revocation)",
+      tradeoffNote:
+        "Stateless JWKS verification (0 IdP hops) continues accepting this token until exp; RFC 7662 Token Introspection (+1 IdP hop) rejects it immediately with active: false."
+    });
+  });
+
+  router.post("/oauth2/introspect", async (req, res) => {
+    const body = isRecord(req.body) ? req.body : {};
+    const token = typeof body.token === "string" ? body.token.trim() : "";
+    if (!token) {
+      res.status(200).json({ active: false });
+      return;
+    }
+
+    try {
+      const verified = await devIdpKeyStore.verifyToken(token, identityConfig.issuer);
+      const jti =
+        typeof verified.payload.jti === "string" ? verified.payload.jti : undefined;
+      if (devIdpKeyStore.isTokenRevoked(token, jti)) {
+        res.status(200).json({
+          active: false,
+          revoked: true,
+          sub: verified.payload.sub ?? null,
+          jti: jti ?? null
+        });
+        return;
+      }
+
+      res.status(200).json({
+        active: true,
+        ...verified.payload
+      });
+    } catch {
+      res.status(200).json({ active: false });
+    }
   });
 
   router.post("/admin/rotate-keys", async (_req, res) => {
@@ -609,6 +788,88 @@ export function createDevIdpRouter(): Router {
       res.json({
         faultId,
         skewSeconds,
+        token
+      });
+      return;
+    }
+
+    if (faultId === "dpop_token_replay") {
+      const dpopBoundClaims: Record<string, unknown> = {
+        ...baseClaims,
+        aud: identityConfig.mcpAudience,
+        act: {
+          sub: "agent:choreo-integrator-bot",
+          client_id: "choreo-mcp-agent-v1",
+          delegation_protocol: "urn:ietf:params:oauth:grant-type:token-exchange"
+        },
+        scope: "orders:read",
+        cnf: {
+          jkt: "dpop_bound_jkt_expected_2026"
+        },
+        iat: nowSec,
+        exp: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS
+      };
+      const token = await devIdpKeyStore.signRs256Jwt(dpopBoundClaims, {
+        typ: "at+jwt"
+      });
+      res.json({
+        faultId,
+        token
+      });
+      return;
+    }
+
+    if (faultId === "rfc8707_token_passthrough") {
+      const passthroughClaims: Record<string, unknown> = {
+        ...baseClaims,
+        aud: identityConfig.audience,
+        act: {
+          sub: "agent:choreo-integrator-bot",
+          client_id: "choreo-mcp-agent-v1",
+          delegation_protocol: "urn:ietf:params:oauth:grant-type:token-exchange"
+        },
+        scope: "orders:read",
+        iat: nowSec,
+        exp: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS
+      };
+      const token = await devIdpKeyStore.signRs256Jwt(passthroughClaims);
+      res.json({
+        faultId,
+        token
+      });
+      return;
+    }
+
+    if (faultId === "act_chain_violation") {
+      const variant = fault.variant === "cycle_detected" ? "cycle_detected" : "depth_exceeded";
+      const badAct =
+        variant === "cycle_detected"
+          ? {
+              sub: "agent:a",
+              client_id: "choreo-mcp-agent-v1",
+              act: { sub: "agent:a", client_id: "choreo-mcp-agent-v1" }
+            }
+          : {
+              sub: "agent:leaf",
+              act: {
+                sub: "agent:mid",
+                act: { sub: "agent:root" }
+              }
+            };
+      const badActClaims: Record<string, unknown> = {
+        ...baseClaims,
+        aud: identityConfig.mcpAudience,
+        act: badAct,
+        scope: "orders:read",
+        iat: nowSec,
+        exp: nowSec + AGENT_TOKEN_MAX_TTL_SECONDS
+      };
+      const token = await devIdpKeyStore.signRs256Jwt(badActClaims, {
+        typ: "at+jwt"
+      });
+      res.json({
+        faultId,
+        variant,
         token
       });
       return;

@@ -1,6 +1,7 @@
 import express, { type RequestHandler, type Router } from "express";
 import identityConfig from "../config/identityConfig.js";
 import { mcpAuditLog } from "../mcp/auditLog.js";
+import { cibaApprovalStore } from "../mcp/cibaStore.js";
 import {
   isMcpToolName,
   MCP_TOOL_LIST,
@@ -8,6 +9,7 @@ import {
 } from "../mcp/toolRegistry.js";
 import { createAuthMiddleware } from "../middleware/authMiddleware.js";
 import { sendBearerError } from "../middleware/bearerChallenge.js";
+import { enforceSenderConstrainedDpop } from "../middleware/dpopMiddleware.js";
 import {
   evaluateMcpToolAuthorization,
   requireAgentDelegation
@@ -154,6 +156,17 @@ export function createMcpRouter(authMiddleware: RequestHandler = authenticateMcp
         jti
       });
 
+      const cibaChallenge =
+        decision.error === "human_approval_required"
+          ? cibaApprovalStore.createRequest({
+              sub: user.sub,
+              actorSub: user.actor.sub,
+              tool: rawToolName,
+              requiredScope: decision.requiredScope,
+              boundJti: jti
+            })
+          : null;
+
       sendBearerError(
         res,
         decision.status,
@@ -174,6 +187,13 @@ export function createMcpRouter(authMiddleware: RequestHandler = authenticateMcp
           grantedScopes: user.scopes,
           delegatedBy: user.sub,
           actor: user.actor,
+          ...(cibaChallenge
+            ? {
+                auth_req_id: cibaChallenge.authReqId,
+                binding_message: cibaChallenge.bindingMessage,
+                expires_in: cibaChallenge.expiresAtSec - cibaChallenge.createdAtSec
+              }
+            : {}),
           defenseTrace: decision.defenseTrace,
           rpcError: {
             code: -32001,
@@ -181,6 +201,7 @@ export function createMcpRouter(authMiddleware: RequestHandler = authenticateMcp
             data: {
               error: decision.error,
               requiredScope: decision.requiredScope,
+              ...(cibaChallenge ? { auth_req_id: cibaChallenge.authReqId } : {}),
               defenseTrace: decision.defenseTrace
             }
           }
@@ -229,8 +250,10 @@ export function createMcpRouter(authMiddleware: RequestHandler = authenticateMcp
     });
   };
 
-  router.post("/", authMiddleware, requireAgentDelegation(), handleMcpRequest);
-  router.post("/tools/call", authMiddleware, requireAgentDelegation(), handleMcpRequest);
+  const dpopGuard = enforceSenderConstrainedDpop(PROTECTED_RESOURCE_METADATA_URL);
+
+  router.post("/", authMiddleware, dpopGuard, requireAgentDelegation(), handleMcpRequest);
+  router.post("/tools/call", authMiddleware, dpopGuard, requireAgentDelegation(), handleMcpRequest);
 
   return router;
 }

@@ -24,7 +24,12 @@ import {
   Workflow,
   Wrench
 } from "lucide-react";
-import type { ApiCallResult, McpAuditEntry } from "../lib/apiClient";
+import type {
+  ApiCallResult,
+  McpAuditEntry,
+  PendingCibaRequest,
+  VerificationMode
+} from "../lib/apiClient";
 import {
   IDP_PRESETS,
   type DelegatedAgentSession,
@@ -64,12 +69,18 @@ interface OidcFlowVisualizerProps {
   readonly attackLabOpen: boolean;
   readonly mcpLoadingTool: McpToolName | null;
   readonly mcpAuditEntries?: readonly McpAuditEntry[];
+  readonly pendingCibaRequest?: PendingCibaRequest | null;
+  readonly verificationMode?: VerificationMode;
+  readonly tokenRevoked?: boolean;
   readonly onSelectStage: (stage: FlowStageId) => void;
   readonly onChangeFault: (fault: FaultState) => void;
   readonly onToggleAttackLab: () => void;
   readonly onRegeneratePkce: () => Promise<void>;
   readonly onRefreshDelegatedToken: () => void;
   readonly onInvokeMcpTool: (tool: McpToolSpec) => Promise<void>;
+  readonly onDecisionCiba?: (decision: "APPROVED" | "DENIED") => void;
+  readonly onChangeVerificationMode?: (mode: VerificationMode) => void;
+  readonly onRevokeToken?: () => void;
   readonly onOpenCodeExporter: () => void;
 }
 
@@ -217,12 +228,18 @@ export const OidcFlowVisualizer = memo(function OidcFlowVisualizer({
   attackLabOpen,
   mcpLoadingTool,
   mcpAuditEntries = [],
+  pendingCibaRequest = null,
+  verificationMode = "jwks",
+  tokenRevoked = false,
   onSelectStage,
   onChangeFault,
   onToggleAttackLab,
   onRegeneratePkce,
   onRefreshDelegatedToken,
   onInvokeMcpTool,
+  onDecisionCiba,
+  onChangeVerificationMode,
+  onRevokeToken,
   onOpenCodeExporter
 }: OidcFlowVisualizerProps) {
   const [isSimulating, setIsSimulating] = useState(false);
@@ -891,8 +908,8 @@ export const OidcFlowVisualizer = memo(function OidcFlowVisualizer({
                 <p className="mcp-subtitle">
                   Actor <code>{delegatedSession.actor.sub}</code> acting on behalf of{" "}
                   <code>{delegatedSession.humanSubject}</code> · Down-scoped to{" "}
-                  <code>{delegatedSession.grantedScopes.join(" ")}</code> (stripped:{" "}
-                  <code>{delegatedSession.strippedScopes.slice(0, 3).join(", ")}</code>)
+                  <code>{delegatedSession.grantedScopes.join(" ")}</code> · RFC 9449 DPoP{" "}
+                  <code>cnf.jkt: {delegatedSession.dpopJkt?.slice(0, 12) ?? "ES256"}...</code>
                 </p>
               </div>
             </div>
@@ -943,6 +960,48 @@ export const OidcFlowVisualizer = memo(function OidcFlowVisualizer({
             })}
           </div>
 
+          {pendingCibaRequest && (
+            <div
+              className="defense-trace-card trace-rejected"
+              role="region"
+              aria-label="CIBA Step-Up Human Approval Request"
+              style={{ marginTop: "0.75rem" }}
+            >
+              <div className="defense-trace-head">
+                <div className="defense-trace-title">
+                  <ShieldAlert size={15} />
+                  <span>CIBA Step-Up Approval Request · Push Consent Required</span>
+                  <span className="rfc-chip">auth_req_id: {pendingCibaRequest.authReqId}</span>
+                </div>
+                <span className="trace-outcome-badge outcome-rejected">
+                  AWAITING HUMAN CONSENT ({pendingCibaRequest.expiresIn}s)
+                </span>
+              </div>
+              <p className="defense-trace-summary">
+                <strong>Binding Message:</strong> {pendingCibaRequest.bindingMessage} (Principal:{" "}
+                <code>{pendingCibaRequest.sub}</code>)
+              </p>
+              <div className="btn-row" style={{ marginTop: "0.5rem" }}>
+                <button
+                  type="button"
+                  className="btn btn-primary btn-xs"
+                  onClick={() => onDecisionCiba?.("APPROVED")}
+                >
+                  <CheckCircle2 size={13} />
+                  Approve Step-Up Consent (Mint One-Time 120s Claim &amp; Retry)
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-xs"
+                  onClick={() => onDecisionCiba?.("DENIED")}
+                >
+                  <ShieldAlert size={13} />
+                  Deny Request
+                </button>
+              </div>
+            </div>
+          )}
+
           {mcpAuditEntries.length > 0 && (
             <div className="mcp-audit-timeline" aria-label="Agent Activity Timeline">
               <div className="mcp-strip-header" style={{ marginTop: "0.75rem" }}>
@@ -992,6 +1051,57 @@ export const OidcFlowVisualizer = memo(function OidcFlowVisualizer({
 
       {/* Synchronized Stage Inspector */}
       <div className="flow-inspector">
+        {activeStage.id === "jwks" && (
+          <div
+            className="fault-subcontrols"
+            style={{
+              marginBottom: "0.75rem",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "0.6rem"
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", flexWrap: "wrap" }}>
+              <span className="subcontrol-label">
+                Architectural Trade-Off (Stateless JWKS vs. RFC 7662 Introspection):
+              </span>
+              <div className="segmented-tabs">
+                <button
+                  type="button"
+                  className={`seg-tab ${verificationMode === "jwks" ? "seg-tab-active" : ""}`}
+                  onClick={() => onChangeVerificationMode?.("jwks")}
+                >
+                  Stateless JWKS (0 IdP Hops · ~0.4ms)
+                </button>
+                <button
+                  type="button"
+                  className={`seg-tab ${verificationMode === "introspect" ? "seg-tab-active" : ""}`}
+                  onClick={() => onChangeVerificationMode?.("introspect")}
+                >
+                  RFC 7662 Introspection (+1 IdP Hop · Real-Time Revocation)
+                </button>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              {tokenRevoked && (
+                <span className="mcp-expect-badge mcp-expect-deny">
+                  Token Revoked (RFC 7009) — JWKS still accepts until exp!
+                </span>
+              )}
+              <button
+                type="button"
+                className="btn btn-xs btn-danger"
+                onClick={() => onRevokeToken?.()}
+              >
+                <ShieldAlert size={12} />
+                {tokenRevoked ? "Token Revoked at IdP" : "Revoke Active Token (RFC 7009)"}
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flow-inspector-banner">
           <div className="flow-inspector-heading">
             <span className="stage-icon-chip">{renderStageIcon(activeStage.id)}</span>

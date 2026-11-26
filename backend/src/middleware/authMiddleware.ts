@@ -309,6 +309,37 @@ export function createAuthMiddleware(
           return;
         }
 
+        const verificationMode = req.headers["x-verification-mode"];
+        const tokenJti = typeof decoded.jti === "string" ? decoded.jti : undefined;
+        if (
+          verificationMode === "introspect" &&
+          identityConfig.devIdpEnabled &&
+          devIdpKeyStore.isTokenRevoked(token, tokenJti)
+        ) {
+          const revokeMsg =
+            "Token was revoked via RFC 7009 and detected as active=false by RFC 7662 Token Introspection.";
+          sendBearerError(
+            res,
+            401,
+            withResourceMeta({ error: "invalid_token", description: revokeMsg }),
+            {
+              error: "token_revoked",
+              message: revokeMsg,
+              verificationMode: "introspect",
+              defenseTrace: {
+                layer: "RFC 7662 Stateful Token Introspection Guard",
+                middleware: "backend/src/middleware/authMiddleware.ts -> POST /dev-idp/oauth2/introspect",
+                rfc: "RFC 7662 §2.2 (Introspection Response active: false)",
+                check: "introspect(token).active === true",
+                outcome: "REJECTED",
+                details:
+                  "Stateful introspection (+1 IdP hop) detected real-time revocation before exp, whereas stateless JWKS verification would continue accepting the token until exp."
+              } satisfies DefenseTrace
+            }
+          );
+          return;
+        }
+
         const { chain: actorChain, truncated: actorChainTruncated } = parseActorChain(decoded.act);
         const claims = toVerifiedClaims(decoded);
         const subject =
