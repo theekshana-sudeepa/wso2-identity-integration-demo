@@ -8,7 +8,10 @@ import jwt, {
 } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
 import identityConfig from "../config/identityConfig.js";
-import type { ActorClaim, DefenseTrace, VerifiedJwtClaims } from "../types/auth.js";
+import type { DefenseTrace, VerifiedJwtClaims } from "../types/auth.js";
+import { sendBearerError } from "./bearerChallenge.js";
+import { parseActorChain } from "./delegationPolicy.js";
+import { buildJwtRejectionTrace, classifyJwtVerifyError } from "./jwtRejection.js";
 
 export interface AuthMiddlewareOptions {
   readonly issuer: string;
@@ -33,13 +36,15 @@ const defaultJwksClient = jwksRsa({
 
 function defaultGetSigningKey(header: JwtHeader, callback: SigningKeyCallback): void {
   if (!header.kid) {
-    callback(new Error("Missing Key ID (kid) in JWT header"));
+    callback(new jwksRsa.SigningKeyNotFoundError("Missing Key ID (kid) in JWT header"));
     return;
   }
 
   defaultJwksClient.getSigningKey(header.kid, (err, key) => {
     if (err || !key) {
-      callback(err ?? new Error("Unable to resolve signing key from JWKS endpoint"));
+      callback(
+        err ?? new jwksRsa.SigningKeyNotFoundError("Unable to resolve signing key from JWKS endpoint")
+      );
       return;
     }
 
@@ -65,126 +70,53 @@ function normalizeClaimList(value: unknown): string[] {
   return [];
 }
 
-function extractActorClaim(rawAct: unknown): ActorClaim | null {
-  if (!isRecord(rawAct) || typeof rawAct.sub !== "string" || rawAct.sub.trim().length === 0) {
-    return null;
-  }
-  return {
-    sub: rawAct.sub.trim(),
-    client_id: typeof rawAct.client_id === "string" ? rawAct.client_id : undefined,
-    delegation_protocol:
-      typeof rawAct.delegation_protocol === "string" ? rawAct.delegation_protocol : undefined
-  };
-}
-
-interface ParsedUnverifiedHeader {
+interface ParsedUnverifiedJwt {
   readonly alg: string | null;
   readonly kid: string | null;
 }
 
-function parseUnverifiedHeader(token: string): ParsedUnverifiedHeader {
-  const firstSegment = token.split(".")[0];
-  if (!firstSegment) {
-    return { alg: null, kid: null };
+function decodeBase64UrlJsonObject(segment: string): Record<string, unknown> | null {
+  if (!segment) {
+    return null;
   }
   try {
-    const normalized = firstSegment.replace(/-/g, "+").replace(/_/g, "/");
+    const normalized = segment.replace(/-/g, "+").replace(/_/g, "/");
     const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
     const parsed: unknown = JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
-    if (!isRecord(parsed)) {
-      return { alg: null, kid: null };
-    }
-    return {
-      alg: typeof parsed.alg === "string" ? parsed.alg : null,
-      kid: typeof parsed.kid === "string" ? parsed.kid : null
-    };
+    return isRecord(parsed) ? parsed : null;
   } catch {
-    return { alg: null, kid: null };
+    return null;
   }
 }
 
-function buildJwtRejectionTrace(
-  err: Error,
-  header: ParsedUnverifiedHeader
-): { readonly errorCode: string; readonly defenseTrace: DefenseTrace } {
-  const msg = err.message;
-  const lower = msg.toLowerCase();
-
-  if (
-    (header.alg !== null && header.alg !== "RS256") ||
-    lower.includes("invalid algorithm") ||
-    lower.includes("signature is required")
-  ) {
-    return {
-      errorCode: "invalid_algorithm",
-      defenseTrace: {
-        layer: "JWT Signature & Algorithm Guard",
-        middleware: "backend/src/middleware/authMiddleware.ts",
-        rfc: "RFC 8725 §3.1 (Algorithm Pinning)",
-        check: 'jwt.verify(token, getSigningKey, { algorithms: ["RS256"] })',
-        outcome: "REJECTED",
-        details: `Algorithm "${header.alg}" rejected by strict RS256 pinning policy.`
-      }
-    };
+function parseUnverifiedJwtStructure(token: string): ParsedUnverifiedJwt | null {
+  const segments = token.split(".");
+  if (segments.length !== 3) {
+    return null;
   }
-
-  if (err.name === "TokenExpiredError" || lower.includes("jwt expired")) {
-    return {
-      errorCode: "token_expired",
-      defenseTrace: {
-        layer: "JWT Temporal Validity Guard",
-        middleware: "backend/src/middleware/authMiddleware.ts",
-        rfc: "RFC 7519 §4.1.4 (exp Claim)",
-        check: "exp + clockTolerance(5s) >= now",
-        outcome: "REJECTED",
-        details: msg
-      }
-    };
+  const header = decodeBase64UrlJsonObject(segments[0]);
+  const payload = decodeBase64UrlJsonObject(segments[1]);
+  if (!header || !payload) {
+    return null;
   }
-
-  if (lower.includes("audience") || lower.includes("issuer")) {
-    return {
-      errorCode: "invalid_claims",
-      defenseTrace: {
-        layer: "JWT Tenant & Audience Guard",
-        middleware: "backend/src/middleware/authMiddleware.ts",
-        rfc: "RFC 7519 §4.1.1 & §4.1.3 (iss / aud)",
-        check: "verify(iss === expectedIssuer && aud === expectedAudience)",
-        outcome: "REJECTED",
-        details: msg
-      }
-    };
-  }
-
-  if (lower.includes("kid") || lower.includes("signing key") || lower.includes("jwks")) {
-    return {
-      errorCode: "unknown_signing_key",
-      defenseTrace: {
-        layer: "JWKS Key Resolution Guard",
-        middleware: "backend/src/middleware/authMiddleware.ts",
-        rfc: "RFC 7517 §4.5 (JWKS kid Rotation)",
-        check: "jwksClient.getSigningKey(header.kid) [LRU cache + 10 req/min limit]",
-        outcome: "REJECTED",
-        details: msg
-      }
-    };
-  }
-
   return {
-    errorCode: "invalid_token",
-    defenseTrace: {
-      layer: "Stateless RS256 Verification Guard",
-      middleware: "backend/src/middleware/authMiddleware.ts",
-      rfc: "RFC 7519 · JWS Verification",
-      check: 'jwt.verify(token, getSigningKey, { algorithms: ["RS256"] })',
-      outcome: "REJECTED",
-      details: msg
-    }
+    alg: typeof header.alg === "string" ? header.alg : null,
+    kid: typeof header.kid === "string" ? header.kid : null
   };
 }
 
+function hasMatchingAudience(aud: unknown, expectedAudience: string): boolean {
+  if (typeof aud === "string") {
+    return aud === expectedAudience;
+  }
+  if (Array.isArray(aud)) {
+    return aud.some((entry) => entry === expectedAudience);
+  }
+  return false;
+}
+
 function toVerifiedClaims(decoded: JwtPayload): VerifiedJwtClaims {
-  const actor = extractActorClaim(decoded.act);
+  const { chain } = parseActorChain(decoded.act);
   const claims: VerifiedJwtClaims = {
     ...decoded,
     sub: typeof decoded.sub === "string" ? decoded.sub : undefined,
@@ -193,7 +125,7 @@ function toVerifiedClaims(decoded: JwtPayload): VerifiedJwtClaims {
       typeof decoded.preferred_username === "string" ? decoded.preferred_username : undefined,
     email: typeof decoded.email === "string" ? decoded.email : undefined,
     scope: typeof decoded.scope === "string" ? decoded.scope : undefined,
-    act: actor ?? undefined,
+    act: chain[0],
     delegation_depth:
       typeof decoded.delegation_depth === "number" ? decoded.delegation_depth : undefined,
     human_approval_token:
@@ -216,7 +148,7 @@ export function createAuthMiddleware(
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      res.status(401).json({
+      sendBearerError(res, 401, null, {
         error: "unauthorized",
         message: "Missing or malformed Authorization header. Expected Bearer token.",
         defenseTrace: {
@@ -233,49 +165,119 @@ export function createAuthMiddleware(
 
     const token = authHeader.slice(7).trim();
     if (!token) {
-      res.status(401).json({
-        error: "unauthorized",
-        message: "Bearer token cannot be empty."
-      });
-      return;
-    }
-
-    const header = parseUnverifiedHeader(token);
-
-    if (header.alg !== null && header.alg !== "RS256") {
-      const rejection = buildJwtRejectionTrace(
-        new Error(`Invalid JWT algorithm "${header.alg}". Only RS256 is permitted.`),
-        header
+      sendBearerError(
+        res,
+        401,
+        { error: "invalid_token", description: "Bearer token cannot be empty" },
+        {
+          error: "unauthorized",
+          message: "Bearer token cannot be empty."
+        }
       );
-      res.status(401).json({
-        error: rejection.errorCode,
-        message: `Invalid JWT algorithm "${header.alg}". Strict algorithms: ["RS256"] pinning enforced.`,
-        defenseTrace: rejection.defenseTrace
-      });
       return;
     }
+
+    const structure = parseUnverifiedJwtStructure(token);
+    if (!structure) {
+      const msg = "Bearer token is not a valid 3-segment JSON Web Token.";
+      sendBearerError(
+        res,
+        401,
+        { error: "invalid_token", description: msg },
+        {
+          error: "malformed_token",
+          message: msg,
+          defenseTrace: buildJwtRejectionTrace("malformed_token", msg)
+        }
+      );
+      return;
+    }
+
+    if (structure.alg !== "RS256") {
+      const msg = `Invalid JWT algorithm "${structure.alg}". Strict algorithms: ["RS256"] pinning enforced.`;
+      sendBearerError(
+        res,
+        401,
+        { error: "invalid_token", description: msg },
+        {
+          error: "invalid_algorithm",
+          message: msg,
+          defenseTrace: buildJwtRejectionTrace(
+            "invalid_algorithm",
+            `Algorithm "${structure.alg}" rejected by strict RS256 pinning policy.`
+          )
+        }
+      );
+      return;
+    }
+
+    let resolverError: Error | null = null;
+    const trackingKeyResolver: GetPublicKeyOrSecret = (jwtHeader, callback) => {
+      options.keyResolver(jwtHeader, (err, key) => {
+        if (err) {
+          resolverError = err instanceof Error ? err : new Error(String(err));
+          callback(err);
+          return;
+        }
+        callback(null, key);
+      });
+    };
 
     jwt.verify(
       token,
-      options.keyResolver,
+      trackingKeyResolver,
       {
         algorithms: ["RS256"],
-        issuer: options.issuer,
-        audience: options.audience,
         clockTolerance: options.clockToleranceSec
       },
       (err, decoded) => {
-        if (err || !decoded || typeof decoded === "string") {
+        if (err || !decoded || typeof decoded === "string" || !isRecord(decoded)) {
           const errorObj = err ?? new Error("Decoded JWT payload is malformed.");
-          const rejection = buildJwtRejectionTrace(errorObj, header);
-          res.status(401).json({
-            error: rejection.errorCode,
-            message: errorObj.message,
-            defenseTrace: rejection.defenseTrace
-          });
+          const reason = classifyJwtVerifyError(err, resolverError);
+          sendBearerError(
+            res,
+            401,
+            { error: "invalid_token", description: errorObj.message },
+            {
+              error: reason,
+              message: errorObj.message,
+              defenseTrace: buildJwtRejectionTrace(reason, errorObj.message)
+            }
+          );
           return;
         }
 
+        if (decoded.iss !== options.issuer) {
+          const issMsg = `Invalid JWT issuer. Expected "${options.issuer}", received "${typeof decoded.iss === "string" ? decoded.iss : "missing"}".`;
+          sendBearerError(
+            res,
+            401,
+            { error: "invalid_token", description: issMsg },
+            {
+              error: "invalid_issuer",
+              message: issMsg,
+              defenseTrace: buildJwtRejectionTrace("invalid_issuer", issMsg)
+            }
+          );
+          return;
+        }
+
+        if (!hasMatchingAudience(decoded.aud, options.audience)) {
+          const audMsg = `Invalid JWT audience. Expected "${options.audience}".`;
+          sendBearerError(
+            res,
+            401,
+            { error: "invalid_token", description: audMsg },
+            {
+              error: "invalid_audience",
+              message: audMsg,
+              defenseTrace: buildJwtRejectionTrace("invalid_audience", audMsg)
+            }
+          );
+          return;
+        }
+
+        const { chain: actorChain, truncated: actorChainTruncated } = parseActorChain(decoded.act);
         const claims = toVerifiedClaims(decoded);
         const subject =
           typeof claims.sub === "string" && claims.sub.length > 0 ? claims.sub : "unknown";
@@ -297,11 +299,13 @@ export function createAuthMiddleware(
           email: typeof claims.email === "string" ? claims.email : null,
           groups,
           scopes,
-          actor: claims.act ?? null,
+          actor: actorChain[0] ?? null,
+          actorChain,
+          actorChainTruncated,
           issuedAtSec: typeof claims.iat === "number" ? claims.iat : null,
           expiresAtSec: typeof claims.exp === "number" ? claims.exp : null,
-          kid: header.kid,
-          alg: header.alg ?? "RS256",
+          kid: structure.kid,
+          alg: structure.alg ?? "RS256",
           rawClaims: claims
         };
 
