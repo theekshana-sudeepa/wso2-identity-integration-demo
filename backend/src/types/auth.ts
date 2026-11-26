@@ -4,6 +4,8 @@ export interface IdentityConfig {
   readonly port: number;
   readonly nodeEnv: string;
   readonly corsOrigins: readonly string[];
+  readonly devIdpEnabled: boolean;
+  readonly devIdpBaseUrl: string;
   readonly wso2BaseUrl: string;
   readonly issuer: string;
   readonly audience: string;

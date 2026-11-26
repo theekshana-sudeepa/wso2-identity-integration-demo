@@ -8,6 +8,7 @@ import jwt, {
 } from "jsonwebtoken";
 import jwksRsa from "jwks-rsa";
 import identityConfig from "../config/identityConfig.js";
+import { devIdpKeyStore } from "../devIdp/keyStore.js";
 import type { DefenseTrace, VerifiedJwtClaims } from "../types/auth.js";
 import { sendBearerError } from "./bearerChallenge.js";
 import { parseActorChain } from "./delegationPolicy.js";
@@ -41,15 +42,29 @@ function defaultGetSigningKey(header: JwtHeader, callback: SigningKeyCallback): 
   }
 
   defaultJwksClient.getSigningKey(header.kid, (err, key) => {
-    if (err || !key) {
+    if (!err && key) {
+      const signingKey = key.getPublicKey();
+      callback(null, signingKey);
+      return;
+    }
+
+    if (identityConfig.devIdpEnabled) {
+      const localPem = devIdpKeyStore.resolvePublicKeyPem(header.kid);
+      if (localPem) {
+        callback(null, localPem);
+        return;
+      }
       callback(
-        err ?? new jwksRsa.SigningKeyNotFoundError("Unable to resolve signing key from JWKS endpoint")
+        new jwksRsa.SigningKeyNotFoundError(
+          `Unable to find a signing key in Dev IdP JWKS that matches '${header.kid}'`
+        )
       );
       return;
     }
 
-    const signingKey = key.getPublicKey();
-    callback(null, signingKey);
+    callback(
+      err ?? new jwksRsa.SigningKeyNotFoundError("Unable to resolve signing key from JWKS endpoint")
+    );
   });
 }
 

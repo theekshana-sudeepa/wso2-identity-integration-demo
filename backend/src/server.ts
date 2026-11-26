@@ -2,6 +2,8 @@ import cors from "cors";
 import express, { type ErrorRequestHandler, type Express, type RequestHandler } from "express";
 import helmet from "helmet";
 import identityConfig from "./config/identityConfig.js";
+import { createDevIdpRouter } from "./devIdp/devIdpRouter.js";
+import { devIdpKeyStore } from "./devIdp/keyStore.js";
 import { authenticateToken, createAuthMiddleware } from "./middleware/authMiddleware.js";
 import { createApiRouter } from "./routes/apiRoutes.js";
 import { createMcpRouter } from "./routes/mcpRoutes.js";
@@ -38,6 +40,9 @@ export function createApp(options?: CreateAppOptions): Express {
     res.json({
       status: "ok",
       environment: identityConfig.nodeEnv,
+      devIdpEnabled: identityConfig.devIdpEnabled,
+      activeKid: identityConfig.devIdpEnabled ? devIdpKeyStore.getActiveKid() : undefined,
+      rotatedKid: identityConfig.devIdpEnabled ? devIdpKeyStore.getRotatedKid() : undefined,
       issuer: identityConfig.issuer,
       audience: identityConfig.audience,
       mcpAudience: identityConfig.mcpAudience,
@@ -46,6 +51,10 @@ export function createApp(options?: CreateAppOptions): Express {
       uptimeSeconds: Math.round(process.uptime())
     });
   });
+
+  if (identityConfig.devIdpEnabled) {
+    app.use("/dev-idp", createDevIdpRouter());
+  }
 
   app.use("/api/v1", createApiRouter(authMiddleware));
   app.use("/api/mcp", createMcpRouter(mcpAuthMiddleware));
