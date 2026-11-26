@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import { AGENT_TOKEN_MAX_TTL_SECONDS, MAX_DELEGATION_DEPTH } from "../config/agentPolicy.js";
 import {
   assertNever,
   type AuthenticatedUser,
@@ -6,13 +7,15 @@ import {
   type McpPolicyDecision,
   type McpToolName
 } from "../types/auth.js";
+import { sendBearerError } from "./bearerChallenge.js";
+import { evaluateActChain } from "./delegationPolicy.js";
 
 export function requireRoles(...allowedRoles: string[]): RequestHandler {
   const normalizedAllowed = allowedRoles.map((role) => role.toLowerCase());
 
   return (req, res, next) => {
     if (!req.user) {
-      res.status(401).json({
+      sendBearerError(res, 401, null, {
         error: "unauthorized",
         message: "Authentication context missing."
       });
@@ -23,6 +26,7 @@ export function requireRoles(...allowedRoles: string[]): RequestHandler {
     const hasMatch = normalizedAllowed.some((role) => userGroups.includes(role));
 
     if (!hasMatch) {
+      const description = `Required role(s): ${allowedRoles.join(", ")}`;
       const defenseTrace: DefenseTrace = {
         layer: "RBAC Role Guard",
         middleware: "backend/src/middleware/rbacMiddleware.ts",
@@ -31,12 +35,17 @@ export function requireRoles(...allowedRoles: string[]): RequestHandler {
         outcome: "REJECTED",
         details: `Principal groups [${req.user.groups.join(", ")}] do not satisfy required roles [${allowedRoles.join(", ")}].`
       };
-      res.status(403).json({
-        error: "forbidden",
-        message: `Access denied. Required role(s): ${allowedRoles.join(", ")}.`,
-        assignedRoles: req.user.groups,
-        defenseTrace
-      });
+      sendBearerError(
+        res,
+        403,
+        { error: "insufficient_scope", description },
+        {
+          error: "forbidden",
+          message: `Access denied. Required role(s): ${allowedRoles.join(", ")}.`,
+          assignedRoles: req.user.groups,
+          defenseTrace
+        }
+      );
       return;
     }
 
@@ -47,7 +56,7 @@ export function requireRoles(...allowedRoles: string[]): RequestHandler {
 export function requireScopes(...requiredScopes: string[]): RequestHandler {
   return (req, res, next) => {
     if (!req.user) {
-      res.status(401).json({
+      sendBearerError(res, 401, null, {
         error: "unauthorized",
         message: "Authentication context missing."
       });
@@ -58,6 +67,7 @@ export function requireScopes(...requiredScopes: string[]): RequestHandler {
     const missingScopes = requiredScopes.filter((scope) => !userScopes.includes(scope));
 
     if (missingScopes.length > 0) {
+      const description = `Missing required OAuth2 scope(s): ${missingScopes.join(", ")}`;
       const defenseTrace: DefenseTrace = {
         layer: "OAuth 2.0 Scope Guard",
         middleware: "backend/src/middleware/rbacMiddleware.ts",
@@ -66,12 +76,17 @@ export function requireScopes(...requiredScopes: string[]): RequestHandler {
         outcome: "REJECTED",
         details: `Missing required scope(s): ${missingScopes.join(", ")}.`
       };
-      res.status(403).json({
-        error: "insufficient_scope",
-        message: `Missing required OAuth2 scope(s): ${missingScopes.join(", ")}.`,
-        grantedScopes: userScopes,
-        defenseTrace
-      });
+      sendBearerError(
+        res,
+        403,
+        { error: "insufficient_scope", description, scope: requiredScopes },
+        {
+          error: "insufficient_scope",
+          message: `Missing required OAuth2 scope(s): ${missingScopes.join(", ")}.`,
+          grantedScopes: userScopes,
+          defenseTrace
+        }
+      );
       return;
     }
 
@@ -81,42 +96,84 @@ export function requireScopes(...requiredScopes: string[]): RequestHandler {
 
 export interface AgentDelegationOptions {
   readonly maxTtlSeconds?: number;
+  readonly maxDepth?: number;
 }
 
 export function requireAgentDelegation(options?: AgentDelegationOptions): RequestHandler {
-  const maxTtlSeconds = options?.maxTtlSeconds ?? 300;
+  const maxTtlSeconds = options?.maxTtlSeconds ?? AGENT_TOKEN_MAX_TTL_SECONDS;
+  const maxDepth = options?.maxDepth ?? MAX_DELEGATION_DEPTH;
 
   return (req, res, next) => {
     if (!req.user) {
-      res.status(401).json({
+      sendBearerError(res, 401, null, {
         error: "unauthorized",
         message: "Authentication context missing."
       });
       return;
     }
 
-    const { actor, issuedAtSec, expiresAtSec } = req.user;
-    if (!actor || !actor.sub.startsWith("agent:")) {
-      const defenseTrace: DefenseTrace = {
-        layer: "RFC 8693 Agent Delegation Guard",
-        middleware: "backend/src/middleware/rbacMiddleware.ts",
-        rfc: "RFC 8693 §4.1 (act Actor Claim)",
-        check: 'requireAgentDelegation() -> verify(act.sub.startsWith("agent:"))',
-        outcome: "REJECTED",
-        details: "Token does not carry a valid RFC 8693 delegated AI agent actor (act.sub) claim."
-      };
-      res.status(403).json({
-        error: "delegation_required",
-        message:
-          "MCP tool invocation requires an RFC 8693 On-Behalf-Of (OBO) delegated token with an act.sub agent claim.",
-        defenseTrace
-      });
+    const { sub, actorChain, actorChainTruncated, issuedAtSec, expiresAtSec } = req.user;
+    const chainVerdict = evaluateActChain(sub, actorChain, actorChainTruncated, maxDepth);
+    if (!chainVerdict.ok) {
+      let message: string;
+      let defenseTrace: DefenseTrace;
+
+      switch (chainVerdict.reason) {
+        case "delegation_required":
+          message =
+            "MCP tool invocation requires an RFC 8693 On-Behalf-Of (OBO) delegated token with an act.sub agent claim.";
+          defenseTrace = {
+            layer: "RFC 8693 Agent Delegation Guard",
+            middleware: "backend/src/middleware/rbacMiddleware.ts",
+            rfc: "RFC 8693 §4.1 (act Actor Claim)",
+            check: 'requireAgentDelegation() -> verify(act.sub.startsWith("agent:"))',
+            outcome: "REJECTED",
+            details: chainVerdict.details
+          };
+          break;
+        case "delegation_chain_too_deep":
+          message = chainVerdict.details;
+          defenseTrace = {
+            layer: "RFC 8693 Delegation Chain Guard",
+            middleware: "backend/src/middleware/rbacMiddleware.ts",
+            rfc: "RFC 8693 §4.1 (Nested act Claim)",
+            check: `evaluateActChain(depth <= ${maxDepth})`,
+            outcome: "REJECTED",
+            details: chainVerdict.details
+          };
+          break;
+        case "delegation_cycle_detected":
+          message = chainVerdict.details;
+          defenseTrace = {
+            layer: "RFC 8693 Delegation Chain Guard",
+            middleware: "backend/src/middleware/rbacMiddleware.ts",
+            rfc: "RFC 8693 §4.1 (Nested act Claim)",
+            check: "evaluateActChain(acyclic actor chain)",
+            outcome: "REJECTED",
+            details: chainVerdict.details
+          };
+          break;
+        default:
+          return assertNever(chainVerdict.reason);
+      }
+
+      sendBearerError(
+        res,
+        403,
+        { error: "insufficient_scope", description: message },
+        {
+          error: chainVerdict.reason,
+          message,
+          defenseTrace
+        }
+      );
       return;
     }
 
     if (issuedAtSec === null || expiresAtSec === null || expiresAtSec - issuedAtSec > maxTtlSeconds) {
       const ttl =
         issuedAtSec !== null && expiresAtSec !== null ? expiresAtSec - issuedAtSec : -1;
+      const message = `Delegated AI agent token TTL must not exceed ${maxTtlSeconds} seconds.`;
       const defenseTrace: DefenseTrace = {
         layer: "Delegated Token Short-TTL Guard",
         middleware: "backend/src/middleware/rbacMiddleware.ts",
@@ -125,11 +182,16 @@ export function requireAgentDelegation(options?: AgentDelegationOptions): Reques
         outcome: "REJECTED",
         details: `Delegated agent token TTL (${ttl}s) exceeds maximum allowed window (${maxTtlSeconds}s).`
       };
-      res.status(403).json({
-        error: "delegation_ttl_exceeded",
-        message: `Delegated AI agent token TTL must not exceed ${maxTtlSeconds} seconds.`,
-        defenseTrace
-      });
+      sendBearerError(
+        res,
+        403,
+        { error: "insufficient_scope", description: message },
+        {
+          error: "delegation_ttl_exceeded",
+          message,
+          defenseTrace
+        }
+      );
       return;
     }
 

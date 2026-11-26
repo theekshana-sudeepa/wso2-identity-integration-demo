@@ -7,6 +7,7 @@ export interface IdentityConfig {
   readonly wso2BaseUrl: string;
   readonly issuer: string;
   readonly audience: string;
+  readonly mcpAudience: string;
   readonly jwksUri: string;
   readonly allowSelfSignedCerts: boolean;
   readonly jwksCacheMaxAgeMs: number;
@@ -17,6 +18,7 @@ export interface ActorClaim {
   readonly sub: string;
   readonly client_id?: string;
   readonly delegation_protocol?: string;
+  readonly act?: ActorClaim;
 }
 
 export interface VerifiedJwtClaims extends JwtPayload {
@@ -40,6 +42,8 @@ export interface AuthenticatedUser {
   readonly groups: readonly string[];
   readonly scopes: readonly string[];
   readonly actor: ActorClaim | null;
+  readonly actorChain: readonly ActorClaim[];
+  readonly actorChainTruncated: boolean;
   readonly issuedAtSec: number | null;
   readonly expiresAtSec: number | null;
   readonly kid: string | null;
