@@ -1,12 +1,51 @@
-# Choreo Labs (formerly WSO2) — WSO2 Identity Server 7.0 Local Orchestration
-# Usage:
-#   docker compose -f docker/docker-compose.yml up -d
-#   Console: https://localhost:9443/console
-# Note: For Asgardeo Cloud SaaS, Docker is not required; point .env to
-#       https://api.asgardeo.io/t/<your-organization>
+# ==============================================================================
+# Choreo Labs (formerly WSO2) — One-Command Full-Stack Orchestration
+# Profiles:
+#   1. Fast Dev Stack (Dev IdP + Express Backend + React Frontend, starts in seconds):
+#      docker compose -f docker/docker-compose.yml --profile dev up --build
+#   2. Full WSO2 Identity Server 7.0 + Automated DCR Bootstrap Stack:
+#      docker compose -f docker/docker-compose.yml --profile wso2 up -d
+# ==============================================================================
 
 services:
+  backend:
+    profiles: ["dev", "wso2"]
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: choreo-identity-backend
+    ports:
+      - "5050:5050"
+    environment:
+      PORT: "5050"
+      NODE_ENV: "development"
+      DEV_IDP_ENABLED: "true"
+      CORS_ORIGIN: "http://localhost:5173,http://127.0.0.1:5173"
+      WSO2_AUDIENCE: "wso2-api-demo"
+      MCP_AUDIENCE: "http://localhost:5050/api/mcp"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5050/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - identity-net
+
+  frontend:
+    profiles: ["dev", "wso2"]
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: choreo-identity-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - backend
+    networks:
+      - identity-net
+
   wso2is:
+    profiles: ["wso2"]
     image: ${WSO2_IS_IMAGE:-wso2/wso2is:7.0.0}
     container_name: wso2-identity-server
     restart: unless-stopped
@@ -20,6 +59,19 @@ services:
       timeout: 10s
       retries: 10
       start_period: 60s
+    networks:
+      - identity-net
+
+  wso2-bootstrap:
+    profiles: ["wso2"]
+    image: curlimages/curl:8.11.0
+    container_name: wso2-dcr-bootstrap
+    depends_on:
+      wso2is:
+        condition: service_healthy
+    volumes:
+      - ./wso2-bootstrap.sh:/bootstrap.sh:ro
+    entrypoint: ["/bin/sh", "/bootstrap.sh"]
     networks:
       - identity-net
 

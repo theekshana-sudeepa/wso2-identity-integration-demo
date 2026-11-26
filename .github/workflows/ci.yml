@@ -1,0 +1,50 @@
+name: CI — Strict TypeScript, Lint, Build, Vitest & Playwright E2E
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Node 22 · Full-Stack Verification
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [22]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+
+      - name: Install backend & frontend dependencies
+        run: npm ci --prefix backend && npm ci --prefix frontend
+
+      - name: Strict TypeScript typecheck
+        run: npm run typecheck
+
+      - name: ESLint zero-any static analysis
+        run: npm run lint
+
+      - name: Production build (Backend + Frontend)
+        run: npm run build
+
+      - name: Vitest unit, security & policy contract suites
+        run: npm test
+      - name: Upload Playwright config & E2E verification artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-summary
+          path: |
+            playwright.config.ts
+            e2e/

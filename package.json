@@ -1,6 +1,6 @@
 {
   "name": "wso2-identity-integration-demo",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Flagship full-stack CIAM & OIDC PKCE visual showcase for Choreo Labs (formerly WSO2) — WSO2 Identity Server 7.0 & Asgardeo, featuring an interactive PKCE/JWKS flow visualizer, RS256 verification, and RBAC enforcement.",
   "author": "Theekshana Sudeepa",
   "license": "MIT",

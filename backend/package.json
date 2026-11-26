@@ -1,6 +1,6 @@
 {
   "name": "wso2-identity-demo-backend",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Stateless Express + strict TypeScript Resource Server validating Choreo Labs (formerly WSO2) Identity Server 7.0 & Asgardeo RS256 JWTs via JWKS and enforcing RBAC scopes.",
   "main": "dist/server.js",
   "author": "Theekshana Sudeepa",

@@ -5,11 +5,16 @@ import identityConfig from "./config/identityConfig.js";
 import { createDevIdpRouter } from "./devIdp/devIdpRouter.js";
 import { devIdpKeyStore } from "./devIdp/keyStore.js";
 import { authenticateToken, createAuthMiddleware } from "./middleware/authMiddleware.js";
+import {
+  createRateLimiter,
+  createRequestContextMiddleware
+} from "./middleware/rateLimitAndLogger.js";
 import { createApiRouter } from "./routes/apiRoutes.js";
 import {
   createMcpRouter,
   PROTECTED_RESOURCE_METADATA_URL
 } from "./routes/mcpRoutes.js";
+import { buildOpenApiSpec, buildScalarDocsHtml } from "./routes/openApiSpec.js";
 
 export interface CreateAppOptions {
   readonly authMiddleware?: RequestHandler;
@@ -27,6 +32,7 @@ export function createApp(options?: CreateAppOptions): Express {
     });
 
   app.use(helmet());
+  app.use(createRequestContextMiddleware());
   app.use(
     cors({
       origin: (origin, callback) => {
@@ -37,11 +43,33 @@ export function createApp(options?: CreateAppOptions): Express {
         callback(new Error(`Origin ${origin} is not allowed by CORS policy.`));
       },
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Authorization", "Content-Type", "DPoP", "X-Verification-Mode"],
-      exposedHeaders: ["WWW-Authenticate"]
+      allowedHeaders: [
+        "Authorization",
+        "Content-Type",
+        "DPoP",
+        "X-Verification-Mode",
+        "X-Request-Id"
+      ],
+      exposedHeaders: [
+        "WWW-Authenticate",
+        "X-Request-Id",
+        "X-RateLimit-Limit",
+        "X-RateLimit-Remaining"
+      ]
     })
   );
   app.use(express.json({ limit: "1mb" }));
+
+  const apiLimiter = createRateLimiter({
+    windowMs: 60_000,
+    maxRequests: 300,
+    scopeLabel: "/api/*"
+  });
+  const tokenLimiter = createRateLimiter({
+    windowMs: 60_000,
+    maxRequests: 120,
+    scopeLabel: "/dev-idp/oauth2/token"
+  });
 
   app.get("/health", (_req, res) => {
     res.json({
@@ -72,12 +100,22 @@ export function createApp(options?: CreateAppOptions): Express {
     });
   });
 
+  app.get("/api/openapi.json", (_req, res) => {
+    res.status(200).json(buildOpenApiSpec());
+  });
+
+  app.get("/api/docs", (_req, res) => {
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.status(200).send(buildScalarDocsHtml());
+  });
+
   if (identityConfig.devIdpEnabled) {
+    app.use("/dev-idp/oauth2/token", tokenLimiter);
     app.use("/dev-idp", createDevIdpRouter());
   }
 
-  app.use("/api/v1", createApiRouter(authMiddleware));
-  app.use("/api/mcp", createMcpRouter(mcpAuthMiddleware));
+  app.use("/api/v1", apiLimiter, createApiRouter(authMiddleware));
+  app.use("/api/mcp", apiLimiter, createMcpRouter(mcpAuthMiddleware));
 
   app.use((_req, res) => {
     res.status(404).json({
