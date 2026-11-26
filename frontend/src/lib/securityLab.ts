@@ -670,30 +670,32 @@ export function generateCodeSnippets(input: CodeExporterInput): GeneratedCodeSni
 
   const isMcpTarget = flowMode === "agent" || selectedStage === "agent_mcp";
   const targetEndpoint = isMcpTarget
-    ? `${config.backendApiUrl}/api/mcp/tools/call`
+    ? `${config.backendApiUrl}/api/mcp`
     : selectedStage === "rbac"
       ? `${config.backendApiUrl}/api/v1/admin/audit-logs`
       : `${config.backendApiUrl}/api/v1/user/profile`;
 
   const method = isMcpTarget ? "POST" : "GET";
-  const mcpBody = JSON.stringify(
-    {
-      tool: "get_order_status",
+  const mcpRpcPayload = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "tools/call",
+    params: {
+      name: "get_order_status",
       arguments: { orderId: "ORD-2026-88412" }
-    },
-    null,
-    2
-  );
+    }
+  };
+  const mcpBody = JSON.stringify(mcpRpcPayload, null, 2);
 
   const curl = isMcpTarget
     ? [
-        `# Choreo Labs · RFC 8693 OBO Delegated AI Agent -> MCP Tool Call`,
+        `# Choreo Labs · RFC 8693 OBO Delegated AI Agent -> MCP JSON-RPC 2.0 Call`,
         `# Active Fault: ${faultEval.title}`,
         `curl -i -X POST "${targetEndpoint}" \\`,
         `  -H "Accept: application/json" \\`,
         `  -H "Content-Type: application/json" \\`,
         `  -H "Authorization: Bearer ${displayToken}" \\`,
-        `  -d '${JSON.stringify({ tool: "get_order_status", arguments: { orderId: "ORD-2026-88412" } })}'`
+        `  -d '${JSON.stringify(mcpRpcPayload)}'`
       ].join("\n")
     : [
         `# Choreo Labs · Stateless RS256 JWKS Resource API Call`,

@@ -8,6 +8,7 @@ export interface BearerChallengeParams {
   readonly error?: BearerErrorCode;
   readonly description?: string;
   readonly scope?: readonly string[];
+  readonly resourceMetadataUrl?: string;
 }
 
 /**
@@ -34,6 +35,13 @@ function sanitizeChallengeValue(raw: string): string {
  */
 export function buildBearerChallenge(params: BearerChallengeParams): string {
   const parts: string[] = [`Bearer realm="${AUTH_REALM}"`];
+
+  if (params.resourceMetadataUrl) {
+    const sanitizedMeta = sanitizeChallengeValue(params.resourceMetadataUrl);
+    if (sanitizedMeta.length > 0) {
+      parts.push(`resource_metadata="${sanitizedMeta}"`);
+    }
+  }
 
   if (params.error) {
     parts.push(`error="${params.error}"`);

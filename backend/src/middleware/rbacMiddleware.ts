@@ -1,5 +1,6 @@
 import type { RequestHandler } from "express";
 import { AGENT_TOKEN_MAX_TTL_SECONDS, MAX_DELEGATION_DEPTH } from "../config/agentPolicy.js";
+import { evaluateRegisteredMcpToolPolicy } from "../mcp/toolRegistry.js";
 import {
   assertNever,
   type AuthenticatedUser,
@@ -203,117 +204,5 @@ export function evaluateMcpToolAuthorization(
   user: AuthenticatedUser,
   tool: McpToolName
 ): McpPolicyDecision {
-  switch (tool) {
-    case "get_order_status": {
-      const requiredScope = "orders:read";
-      if (!user.scopes.includes(requiredScope)) {
-        return {
-          allowed: false,
-          status: 403,
-          error: "scope_escalation_blocked",
-          message: `Scope escalation blocked: delegated agent lacks "${requiredScope}" for ${tool}.`,
-          tool,
-          requiredScope,
-          defenseTrace: {
-            layer: "MCP Tool Scope-Subset Guard",
-            middleware: "backend/src/middleware/rbacMiddleware.ts",
-            rfc: "RFC 8693 §2.1 (Down-Scoped Token Exchange)",
-            check: `evaluateMcpToolAuthorization("${tool}") -> scopes.includes("${requiredScope}")`,
-            outcome: "REJECTED",
-            details: `Granted agent scopes [${user.scopes.join(", ")}] do not include "${requiredScope}".`
-          }
-        };
-      }
-      return {
-        allowed: true,
-        tool,
-        requiredScope,
-        defenseTrace: {
-          layer: "MCP Tool Scope-Subset Guard",
-          middleware: "backend/src/middleware/rbacMiddleware.ts",
-          rfc: "RFC 8693 §4.1 (act + Down-Scoped Access)",
-          check: `evaluateMcpToolAuthorization("${tool}") -> act.sub + scopes.includes("${requiredScope}")`,
-          outcome: "ALLOWED",
-          details: `Delegated agent "${user.actor?.sub ?? "unknown"}" authorized on behalf of "${user.sub}" with narrowed scope "${requiredScope}".`
-        }
-      };
-    }
-
-    case "issue_refund": {
-      const requiredScope = "refunds:execute";
-      if (!user.scopes.includes(requiredScope)) {
-        return {
-          allowed: false,
-          status: 403,
-          error: "scope_escalation_blocked",
-          message:
-            'Scope escalation blocked: "refunds:execute" was intentionally stripped during RFC 8693 OBO token down-scoping.',
-          tool,
-          requiredScope,
-          defenseTrace: {
-            layer: "MCP Tool Scope-Subset Guard",
-            middleware: "backend/src/middleware/rbacMiddleware.ts",
-            rfc: "RFC 8693 §2.1 (Privilege Attenuation)",
-            check: `evaluateMcpToolAuthorization("${tool}") -> scopes.includes("${requiredScope}")`,
-            outcome: "REJECTED",
-            details: `Autonomous agent attempted privileged financial mutation "${tool}" without "${requiredScope}". Granted scopes: [${user.scopes.join(", ")}].`
-          }
-        };
-      }
-      return {
-        allowed: true,
-        tool,
-        requiredScope,
-        defenseTrace: {
-          layer: "MCP Tool Scope-Subset Guard",
-          middleware: "backend/src/middleware/rbacMiddleware.ts",
-          rfc: "RFC 8693 §2.1",
-          check: `evaluateMcpToolAuthorization("${tool}") -> scopes.includes("${requiredScope}")`,
-          outcome: "ALLOWED",
-          details: `Explicitly scoped refund tool executed by "${user.actor?.sub ?? "unknown"}".`
-        }
-      };
-    }
-
-    case "export_all_users": {
-      const requiredScope = "users:export";
-      const hasHumanApproval = Boolean(user.rawClaims.human_approval_token);
-      if (!hasHumanApproval || !user.scopes.includes(requiredScope)) {
-        return {
-          allowed: false,
-          status: 403,
-          error: "human_approval_required",
-          message:
-            "Human approval required: bulk PII export cannot be executed autonomously by a delegated AI agent without step-up human consent.",
-          tool,
-          requiredScope,
-          defenseTrace: {
-            layer: "MCP Human-in-the-Loop Step-Up Guard",
-            middleware: "backend/src/middleware/rbacMiddleware.ts",
-            rfc: "RFC 8693 + CIBA / Step-Up Human Consent",
-            check: `evaluateMcpToolAuthorization("${tool}") -> verify(human_approval_token && "${requiredScope}")`,
-            outcome: "REJECTED",
-            details:
-              'High-risk PII exfiltration tool "export_all_users" requires interactive human step-up approval (missing human_approval_token).'
-          }
-        };
-      }
-      return {
-        allowed: true,
-        tool,
-        requiredScope,
-        defenseTrace: {
-          layer: "MCP Human-in-the-Loop Step-Up Guard",
-          middleware: "backend/src/middleware/rbacMiddleware.ts",
-          rfc: "RFC 8693 + Step-Up Consent",
-          check: `evaluateMcpToolAuthorization("${tool}") -> verified step-up token`,
-          outcome: "ALLOWED",
-          details: "Step-up human approval token verified."
-        }
-      };
-    }
-
-    default:
-      return assertNever(tool);
-  }
+  return evaluateRegisteredMcpToolPolicy(user, tool);
 }

@@ -397,8 +397,32 @@ export function createDevIdpRouter(): Router {
         return;
       }
 
+      const requestedResource =
+        typeof body.resource === "string" ? body.resource.trim() : "";
+      if (
+        requestedResource.length > 0 &&
+        requestedResource !== identityConfig.mcpAudience &&
+        requestedResource !== identityConfig.audience
+      ) {
+        const defenseTrace: DefenseTrace = {
+          layer: "STS RFC 8707 Resource Indicator Guard",
+          middleware: "backend/src/devIdp/devIdpRouter.ts -> token-exchange",
+          rfc: "RFC 8707 §2 (Resource Indicators for OAuth 2.0)",
+          check: `resource("${requestedResource}") in registeredProtectedResources`,
+          outcome: "REJECTED",
+          details: `Requested resource indicator "${requestedResource}" is not a registered Protected Resource URI. Expected "${identityConfig.mcpAudience}".`
+        };
+        res.status(400).json({
+          error: "invalid_target",
+          error_description: `Unregistered RFC 8707 resource indicator "${requestedResource}".`,
+          expected_resource: identityConfig.mcpAudience,
+          defenseTrace
+        });
+        return;
+      }
+
       const targetAudience =
-        (typeof body.resource === "string" && body.resource.trim()) ||
+        requestedResource ||
         (typeof body.audience === "string" && body.audience.trim()) ||
         identityConfig.mcpAudience;
 

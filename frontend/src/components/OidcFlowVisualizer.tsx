@@ -24,7 +24,7 @@ import {
   Workflow,
   Wrench
 } from "lucide-react";
-import type { ApiCallResult } from "../lib/apiClient";
+import type { ApiCallResult, McpAuditEntry } from "../lib/apiClient";
 import {
   IDP_PRESETS,
   type DelegatedAgentSession,
@@ -63,6 +63,7 @@ interface OidcFlowVisualizerProps {
   readonly faultEval: FaultEvaluation;
   readonly attackLabOpen: boolean;
   readonly mcpLoadingTool: McpToolName | null;
+  readonly mcpAuditEntries?: readonly McpAuditEntry[];
   readonly onSelectStage: (stage: FlowStageId) => void;
   readonly onChangeFault: (fault: FaultState) => void;
   readonly onToggleAttackLab: () => void;
@@ -215,6 +216,7 @@ export const OidcFlowVisualizer = memo(function OidcFlowVisualizer({
   faultEval,
   attackLabOpen,
   mcpLoadingTool,
+  mcpAuditEntries = [],
   onSelectStage,
   onChangeFault,
   onToggleAttackLab,
@@ -940,6 +942,51 @@ export const OidcFlowVisualizer = memo(function OidcFlowVisualizer({
               );
             })}
           </div>
+
+          {mcpAuditEntries.length > 0 && (
+            <div className="mcp-audit-timeline" aria-label="Agent Activity Timeline">
+              <div className="mcp-strip-header" style={{ marginTop: "0.75rem" }}>
+                <div className="mcp-strip-title">
+                  <span className="stage-icon-chip">
+                    <Activity size={13} />
+                  </span>
+                  <div>
+                    <h4>Agent Activity Timeline · JSON-RPC 2.0 Audit Ring Buffer</h4>
+                  </div>
+                </div>
+                <span className="rfc-chip">{mcpAuditEntries.length} recorded</span>
+              </div>
+              <div className="trace-kv-grid" style={{ display: "grid", gap: "0.35rem", marginTop: "0.4rem" }}>
+                {mcpAuditEntries.slice(0, 5).map((entry) => (
+                  <div
+                    key={entry.id}
+                    className="trace-kv"
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: "0.75rem",
+                      fontSize: "0.76rem",
+                      padding: "0.35rem 0.6rem"
+                    }}
+                  >
+                    <span>
+                      <strong>{entry.tool}</strong> · <code>{entry.actorSub}</code> on behalf of{" "}
+                      <code>{entry.sub}</code> (tier: <code>{entry.riskTier}</code>
+                      {entry.jti ? `, jti: ${entry.jti}` : ""})
+                    </span>
+                    <span
+                      className={`mcp-expect-badge ${
+                        entry.decision === "ALLOWED" ? "mcp-expect-allow" : "mcp-expect-deny"
+                      }`}
+                    >
+                      {entry.status} {entry.decision} · {entry.reason}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

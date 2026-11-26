@@ -19,6 +19,7 @@ export interface AuthMiddlewareOptions {
   readonly audience: string;
   readonly clockToleranceSec: number;
   readonly keyResolver: GetPublicKeyOrSecret;
+  readonly resourceMetadataUrl?: string;
 }
 
 const requestAgent = identityConfig.allowSelfSignedCerts
@@ -156,14 +157,30 @@ export function createAuthMiddleware(
     issuer: overrides?.issuer ?? identityConfig.issuer,
     audience: overrides?.audience ?? identityConfig.audience,
     clockToleranceSec: overrides?.clockToleranceSec ?? 5,
-    keyResolver: overrides?.keyResolver ?? defaultGetSigningKey
+    keyResolver: overrides?.keyResolver ?? defaultGetSigningKey,
+    resourceMetadataUrl: overrides?.resourceMetadataUrl
+  };
+
+  const withResourceMeta = (
+    params?: {
+      readonly error?: "invalid_request" | "invalid_token" | "insufficient_scope";
+      readonly description?: string;
+    } | null
+  ) => {
+    if (!options.resourceMetadataUrl) {
+      return params ?? null;
+    }
+    return {
+      ...(params ?? {}),
+      resourceMetadataUrl: options.resourceMetadataUrl
+    };
   };
 
   return (req, res, next) => {
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      sendBearerError(res, 401, null, {
+      sendBearerError(res, 401, withResourceMeta(null), {
         error: "unauthorized",
         message: "Missing or malformed Authorization header. Expected Bearer token.",
         defenseTrace: {
@@ -183,7 +200,7 @@ export function createAuthMiddleware(
       sendBearerError(
         res,
         401,
-        { error: "invalid_token", description: "Bearer token cannot be empty" },
+        withResourceMeta({ error: "invalid_token", description: "Bearer token cannot be empty" }),
         {
           error: "unauthorized",
           message: "Bearer token cannot be empty."
@@ -198,7 +215,7 @@ export function createAuthMiddleware(
       sendBearerError(
         res,
         401,
-        { error: "invalid_token", description: msg },
+        withResourceMeta({ error: "invalid_token", description: msg }),
         {
           error: "malformed_token",
           message: msg,
@@ -213,7 +230,7 @@ export function createAuthMiddleware(
       sendBearerError(
         res,
         401,
-        { error: "invalid_token", description: msg },
+        withResourceMeta({ error: "invalid_token", description: msg }),
         {
           error: "invalid_algorithm",
           message: msg,
@@ -252,7 +269,7 @@ export function createAuthMiddleware(
           sendBearerError(
             res,
             401,
-            { error: "invalid_token", description: errorObj.message },
+            withResourceMeta({ error: "invalid_token", description: errorObj.message }),
             {
               error: reason,
               message: errorObj.message,
@@ -267,7 +284,7 @@ export function createAuthMiddleware(
           sendBearerError(
             res,
             401,
-            { error: "invalid_token", description: issMsg },
+            withResourceMeta({ error: "invalid_token", description: issMsg }),
             {
               error: "invalid_issuer",
               message: issMsg,
@@ -282,7 +299,7 @@ export function createAuthMiddleware(
           sendBearerError(
             res,
             401,
-            { error: "invalid_token", description: audMsg },
+            withResourceMeta({ error: "invalid_token", description: audMsg }),
             {
               error: "invalid_audience",
               message: audMsg,

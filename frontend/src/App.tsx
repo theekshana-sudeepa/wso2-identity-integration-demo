@@ -10,6 +10,8 @@ import {
   checkBackendHealth,
   exchangeDevIdpOboToken,
   exchangeDevIdpPersonaToken,
+  fetchMcpAuditLog,
+  getSimulatedMcpAuditLog,
   invokeProtectedApi,
   probeDevIdpPkceMismatch,
   requestDevIdpFaultToken,
@@ -19,7 +21,8 @@ import {
   type ApiCallResult,
   type ApiEndpointSpec,
   type BackendHealthStatus,
-  type ExecutionMode
+  type ExecutionMode,
+  type McpAuditEntry
 } from "./lib/apiClient";
 import {
   clearSession,
@@ -95,6 +98,7 @@ export function App() {
   });
 
   const [delegatedSession, setDelegatedSession] = useState<DelegatedAgentSession | null>(null);
+  const [mcpAuditEntries, setMcpAuditEntries] = useState<readonly McpAuditEntry[]>([]);
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [exporterOpen, setExporterOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -576,6 +580,7 @@ export function App() {
           );
           setLastMcpResult(simulated);
           setApiResult(simulated);
+          setMcpAuditEntries(getSimulatedMcpAuditLog());
         } else {
           if (activeFault.id === "pkce_verifier_mismatch" && backendHealth.devIdpEnabled) {
             const pkceMismatchResult = await probeDevIdpPkceMismatch(
@@ -638,13 +643,23 @@ export function App() {
 
           const liveResult = await invokeProtectedApi(
             config.backendApiUrl,
-            "/api/mcp/tools/call",
+            "/api/mcp",
             "POST",
             tokenToSend,
-            { tool: toolSpec.name, arguments: toolSpec.sampleArguments }
+            {
+              jsonrpc: "2.0",
+              id: Date.now(),
+              method: "tools/call",
+              params: {
+                name: toolSpec.name,
+                arguments: toolSpec.sampleArguments
+              }
+            }
           );
           setLastMcpResult(liveResult);
           setApiResult(liveResult);
+          const freshAudit = await fetchMcpAuditLog(config.backendApiUrl);
+          setMcpAuditEntries(freshAudit);
         }
         setSelectedStage("agent_mcp");
       } finally {
@@ -993,6 +1008,7 @@ export function App() {
             faultEval={faultEval}
             attackLabOpen={attackLabOpen}
             mcpLoadingTool={mcpLoadingTool}
+            mcpAuditEntries={mcpAuditEntries}
             onSelectStage={setSelectedStage}
             onChangeFault={handleChangeFault}
             onToggleAttackLab={toggleAttackLab}

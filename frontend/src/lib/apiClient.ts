@@ -117,6 +117,85 @@ export interface BackendHealthStatus {
   readonly uptimeSeconds?: number;
 }
 
+export interface McpAuditEntry {
+  readonly id: string;
+  readonly timestamp: string;
+  readonly sub: string;
+  readonly actorSub: string;
+  readonly tool: string;
+  readonly riskTier: "read" | "write" | "high_risk_pii";
+  readonly decision: "ALLOWED" | "DENIED";
+  readonly status: number;
+  readonly reason: string;
+  readonly jti: string | null;
+}
+
+const simulatedMcpAuditRing: McpAuditEntry[] = [];
+
+function recordSimulatedMcpAudit(entry: Omit<McpAuditEntry, "id">): void {
+  simulatedMcpAuditRing.unshift({
+    id: `sim_aud_${Date.now()}_${simulatedMcpAuditRing.length + 1}`,
+    ...entry
+  });
+  if (simulatedMcpAuditRing.length > 50) {
+    simulatedMcpAuditRing.pop();
+  }
+}
+
+export function getSimulatedMcpAuditLog(): readonly McpAuditEntry[] {
+  return [...simulatedMcpAuditRing];
+}
+
+export async function fetchMcpAuditLog(baseUrl: string): Promise<readonly McpAuditEntry[]> {
+  try {
+    const res = await fetch(`${baseUrl}/api/mcp/audit`, {
+      method: "GET",
+      headers: { Accept: "application/json" }
+    });
+    if (!res.ok) {
+      return getSimulatedMcpAuditLog();
+    }
+    const raw: unknown = await res.json();
+    if (!isRecord(raw) || !Array.isArray(raw.entries)) {
+      return getSimulatedMcpAuditLog();
+    }
+    const entries: McpAuditEntry[] = [];
+    for (const item of raw.entries) {
+      if (
+        isRecord(item) &&
+        typeof item.id === "string" &&
+        typeof item.timestamp === "string" &&
+        typeof item.sub === "string" &&
+        typeof item.actorSub === "string" &&
+        typeof item.tool === "string" &&
+        typeof item.status === "number" &&
+        typeof item.reason === "string"
+      ) {
+        const riskTier =
+          item.riskTier === "write" || item.riskTier === "high_risk_pii"
+            ? item.riskTier
+            : "read";
+        const decision = item.decision === "ALLOWED" ? "ALLOWED" : "DENIED";
+        entries.push({
+          id: item.id,
+          timestamp: item.timestamp,
+          sub: item.sub,
+          actorSub: item.actorSub,
+          tool: item.tool,
+          riskTier,
+          decision,
+          status: item.status,
+          reason: item.reason,
+          jti: typeof item.jti === "string" ? item.jti : null
+        });
+      }
+    }
+    return entries;
+  } catch {
+    return getSimulatedMcpAuditLog();
+  }
+}
+
 function isStaticHostedWithoutBackend(baseUrl: string): boolean {
   if (typeof window === "undefined") return false;
   const host = window.location.hostname;
@@ -605,6 +684,17 @@ export function simulateMcpToolCall(
 
   switch (toolSpec.name) {
     case "get_order_status": {
+      recordSimulatedMcpAudit({
+        timestamp: nowIso,
+        sub: delegatedSession.humanSubject,
+        actorSub: delegatedSession.actor.sub,
+        tool: toolSpec.name,
+        riskTier: "read",
+        decision: "ALLOWED",
+        status: 200,
+        reason: "authorized_downscoped_obo",
+        jti: `sim_jti_${nowSec}`
+      });
       const defenseTrace: DefenseTrace = {
         layer: "MCP Tool Scope-Subset Guard",
         middleware: "backend/src/routes/mcpRoutes.ts -> requireAgentDelegation()",
@@ -644,6 +734,17 @@ export function simulateMcpToolCall(
     }
 
     case "issue_refund": {
+      recordSimulatedMcpAudit({
+        timestamp: nowIso,
+        sub: delegatedSession.humanSubject,
+        actorSub: delegatedSession.actor.sub,
+        tool: toolSpec.name,
+        riskTier: "write",
+        decision: "DENIED",
+        status: 403,
+        reason: "scope_escalation_blocked",
+        jti: `sim_jti_${nowSec}`
+      });
       const defenseTrace: DefenseTrace = {
         layer: "MCP Tool Scope-Subset Guard",
         middleware: "backend/src/middleware/rbacMiddleware.ts -> evaluateMcpToolAuthorization()",
@@ -678,6 +779,17 @@ export function simulateMcpToolCall(
     }
 
     case "export_all_users": {
+      recordSimulatedMcpAudit({
+        timestamp: nowIso,
+        sub: delegatedSession.humanSubject,
+        actorSub: delegatedSession.actor.sub,
+        tool: toolSpec.name,
+        riskTier: "high_risk_pii",
+        decision: "DENIED",
+        status: 403,
+        reason: "human_approval_required",
+        jti: `sim_jti_${nowSec}`
+      });
       const defenseTrace: DefenseTrace = {
         layer: "MCP Human-in-the-Loop Step-Up Guard",
         middleware: "backend/src/middleware/rbacMiddleware.ts -> evaluateMcpToolAuthorization()",

@@ -6,7 +6,10 @@ import { createDevIdpRouter } from "./devIdp/devIdpRouter.js";
 import { devIdpKeyStore } from "./devIdp/keyStore.js";
 import { authenticateToken, createAuthMiddleware } from "./middleware/authMiddleware.js";
 import { createApiRouter } from "./routes/apiRoutes.js";
-import { createMcpRouter } from "./routes/mcpRoutes.js";
+import {
+  createMcpRouter,
+  PROTECTED_RESOURCE_METADATA_URL
+} from "./routes/mcpRoutes.js";
 
 export interface CreateAppOptions {
   readonly authMiddleware?: RequestHandler;
@@ -17,7 +20,11 @@ export function createApp(options?: CreateAppOptions): Express {
   const app = express();
   const authMiddleware = options?.authMiddleware ?? authenticateToken;
   const mcpAuthMiddleware =
-    options?.mcpAuthMiddleware ?? createAuthMiddleware({ audience: identityConfig.mcpAudience });
+    options?.mcpAuthMiddleware ??
+    createAuthMiddleware({
+      audience: identityConfig.mcpAudience,
+      resourceMetadataUrl: PROTECTED_RESOURCE_METADATA_URL
+    });
 
   app.use(helmet());
   app.use(
@@ -49,6 +56,19 @@ export function createApp(options?: CreateAppOptions): Express {
       jwksUri: identityConfig.jwksUri,
       mcpToolsEndpoint: "/api/mcp/tools/call",
       uptimeSeconds: Math.round(process.uptime())
+    });
+  });
+
+  app.get("/.well-known/oauth-protected-resource", (_req, res) => {
+    res.status(200).json({
+      resource: identityConfig.mcpAudience,
+      authorization_servers: [identityConfig.issuer],
+      jwks_uri: identityConfig.jwksUri,
+      scopes_supported: ["orders:read", "refunds:execute", "users:export"],
+      bearer_methods_supported: ["header"],
+      dpop_signing_alg_values_supported: ["ES256"],
+      resource_documentation:
+        "https://github.com/theekshana-sudeepa/wso2-identity-integration-demo#readme"
     });
   });
 
