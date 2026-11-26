@@ -156,8 +156,8 @@ sequenceDiagram
 
 - **RFC 7636 PKCE Public Client Hardening**: Generates 384-bit (`48`-byte) cryptographic `code_verifier` values and `S256` (`SHA-256` Base64URL) `code_challenge` digests natively via the browser Web Crypto API, verified against RFC 7636 Appendix B test vectors in Vitest.
 - **RFC 6749 §10.12 CSRF State Binding**: Enforces strict one-time cryptographic `state` validation on `/callback` before exchanging authorization codes at `/oauth2/token`.
-- **RFC 8725 RS256 Algorithm Pinning & RFC 7517 JWKS Rotation**: Backend `createAuthMiddleware` explicitly pins `algorithms: ["RS256"]` to block `alg: "none"` and `HS256` key-confusion attacks, resolves keys by `kid` via `jwks-rsa` (10-min LRU cache, `maxEntries: 5`, rate-limited to `10 req/min`), and validates `iss`, `aud`, and `exp` (`±5s` clock tolerance) with structured `DefenseTrace` diagnostics.
-- **RFC 8693 AI Agent Delegation & MCP Guard**: `requireAgentDelegation` + `evaluateMcpToolAuthorization` enforce an explicit `act.sub` actor claim (`agent:*`), cap delegated token TTL (`<= 300s`, 60s in console), block privilege escalation (`issue_refund` → `403 scope_escalation_blocked`), and mandate step-up human consent for bulk PII export (`export_all_users` → `403 human_approval_required`).
+- **RFC 8725 RS256 Algorithm Pinning, Typed Rejection Classification & RFC 6750 Challenges**: Backend `createAuthMiddleware` explicitly pins `algorithms: ["RS256"]` to block `alg: "none"` and `HS256` key-confusion attacks, classifies errors via `instanceof` checks (`TokenExpiredError`, `NotBeforeError`, `JsonWebTokenError`, `SigningKeyNotFoundError`, `JwksRateLimitError`) into distinct rejection reasons (`invalid_algorithm`, `token_expired`, `token_not_yet_valid`, `invalid_audience`, `invalid_issuer`, `unknown_signing_key`, `jwks_rate_limited`, `invalid_signature`, `malformed_token`), resolves keys by `kid` via `jwks-rsa` (10-min LRU cache, `maxEntries: 5`, rate-limited to `10 req/min`), and emits compliant RFC 6750 `WWW-Authenticate` Bearer challenge headers on every `401`/`403` response.
+- **RFC 8693 AI Agent Delegation, Dedicated MCP Audience & Chain Policy**: `/api/mcp` enforces its own canonical audience (`MCP_AUDIENCE`, rejecting human-API tokens to prevent passthrough), `requireAgentDelegation` + `evaluateActChain` + `evaluateMcpToolAuthorization` enforce an explicit `act.sub` actor claim (`agent:*`), nested `act` chain bounds (`MAX_DELEGATION_DEPTH = 2`, acyclic), STS-side `may_act` (§4.4) actor policy, single-constant delegated token TTL (`≤ 60s` via `AGENT_TOKEN_MAX_TTL_SECONDS`), privilege escalation blocking (`issue_refund` → `403 scope_escalation_blocked`), and step-up human consent (`export_all_users` → `403 human_approval_required`).
 - **100% Strict TypeScript Discipline**: Both `frontend/` and `backend/` enforce `strict: true`, zero `any`, zero `@ts-ignore`, discriminated unions with exhaustive `assertNever` switches, and ESLint `@typescript-eslint/no-explicit-any: "error"`.
 
 ---
@@ -166,7 +166,7 @@ sequenceDiagram
 
 | Method | Endpoint | Access Policy | Description |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/health` | Public | Resource server health status, uptime, issuer, JWKS URI, and MCP endpoint |
+| `GET` | `/health` | Public | Resource server health status, uptime, issuer, `audience`, `mcpAudience`, JWKS URI, and MCP endpoint |
 | `GET` | `/api/v1/public/info` | Public | Service metadata and Choreo Labs WSO2 IS 7.0 / Asgardeo protocol details |
 | `GET` | `/api/v1/user/profile` | Authenticated `RS256` JWT | Extracts and returns verified identity claims (and optional `act` actor) |
 | `GET` | `/api/v1/user/roles` | Authenticated `RS256` JWT | Lists resolved user groups, OAuth 2.0 scopes, and computed admin flag |
@@ -185,8 +185,8 @@ Run deterministic cryptographic and policy tests across both workspaces:
 npm test
 
 # Or run individual suites
-npm run test:backend   # Ephemeral RSA-2048 keypair tests: RS256 pinning, exp/aud/iss/kid, RBAC, MCP OBO
-npm run test:frontend  # RFC 7636 Appendix B S256 vector, JWT parser edge cases, RBAC dry-run & MCP simulation
+npm run test:backend   # 17 Vitest specs: RS256 pinning, RFC 6750 headers, audience isolation, act chains, drift guard
+npm run test:frontend  # 5 Vitest specs: RFC 7636 S256 vector, JWT parser, RBAC dry-run & MCP simulation
 ```
 
 ---
@@ -198,12 +198,18 @@ wso2-identity-integration-demo/
 ├── backend/
 │   ├── src/
 │   │   ├── __tests__/
-│   │   │   └── security.test.ts         # Ephemeral RSA-2048 Vitest suite (RS256, RBAC, MCP OBO)
+│   │   │   ├── agentPolicy.drift.test.ts # Sync guard for frontend/backend TTL & depth bounds
+│   │   │   ├── delegationPolicy.test.ts  # RFC 8693 §4.1 nested act & §4.4 may_act unit tests
+│   │   │   └── security.test.ts          # Ephemeral RSA-2048 Vitest suite (RS256, RFC 6750, MCP OBO)
 │   │   ├── config/
-│   │   │   └── identityConfig.ts        # Strict typed environment loader (WSO2 IS & Asgardeo)
+│   │   │   ├── agentPolicy.ts            # Canonical 60s TTL & max delegation depth constants
+│   │   │   └── identityConfig.ts         # Strict typed env loader (WSO2 IS, Asgardeo & MCP_AUDIENCE)
 │   │   ├── middleware/
-│   │   │   ├── authMiddleware.ts        # Stateless RS256 pinning, JWKS LRU cache & DefenseTrace
-│   │   │   └── rbacMiddleware.ts        # requireRoles, requireScopes & requireAgentDelegation
+│   │   │   ├── authMiddleware.ts         # Stateless RS256 pinning, JWKS LRU cache & aud/iss checks
+│   │   │   ├── bearerChallenge.ts        # RFC 6750 WWW-Authenticate Bearer challenge builder
+│   │   │   ├── delegationPolicy.ts       # Iterative act chain & may_act policy evaluators
+│   │   │   ├── jwtRejection.ts           # Typed instanceof JWT error classification & DefenseTrace
+│   │   │   └── rbacMiddleware.ts         # requireRoles, requireScopes & requireAgentDelegation
 │   │   ├── routes/
 │   │   │   ├── apiRoutes.ts             # Public, authenticated, RBAC & scope-protected routes
 │   │   │   └── mcpRoutes.ts             # POST /api/mcp/tools/call RFC 8693 MCP Tool Guard
@@ -229,6 +235,7 @@ wso2-identity-integration-demo/
 │   │   │   ├── OidcFlowVisualizer.tsx   # Accessible 5/6-stage SVG visualizer + MCP tool controls
 │   │   │   └── TokenTtlBadge.tsx        # Isolated 1Hz TTL countdown component
 │   │   ├── lib/
+│   │   │   ├── agentPolicy.ts             # Mirrored 60s TTL & max depth constants (drift-guarded)
 │   │   │   ├── apiClient.ts             # Typed API client, health probe & Browser Simulation engine
 │   │   │   ├── pkce.ts                  # Web Crypto S256 PKCE, JWT parser & RFC 8693 OBO minter
 │   │   │   └── securityLab.ts           # Discriminated Fault Lab states, MCP policies & code generator
@@ -266,6 +273,10 @@ npm run docker:up
 ```
 
 Once healthy, access the WSO2 Identity Server 7.0 Console at `https://localhost:9443/console` and follow [docs/wso2-setup-guide.md](./docs/wso2-setup-guide.md) to register the SPA Public Client.
+
+Key Phase-1 audience environment variables in `.env.example`:
+- `MCP_AUDIENCE=http://localhost:5050/api/mcp` — Canonical audience enforced exclusively on `/api/mcp/*` to block human-API token passthrough.
+- `VITE_MCP_AUDIENCE=http://localhost:5050/api/mcp` — Frontend OBO target audience aligned with the MCP resource server.
 
 ---
 
