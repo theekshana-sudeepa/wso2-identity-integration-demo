@@ -1,3 +1,4 @@
+import { AGENT_TOKEN_MAX_TTL_SECONDS } from "./agentPolicy";
 import {
   isRecord,
   type DelegatedAgentSession,
@@ -533,11 +534,10 @@ export function simulateMcpToolCall(
     const defenseTrace: DefenseTrace = {
       layer: "Delegated Agent TTL Guard",
       middleware: "backend/src/middleware/authMiddleware.ts + requireAgentDelegation()",
-      rfc: "RFC 8693 · Short-Lived 60s Agent Token",
+      rfc: `RFC 8693 · Short-Lived ${AGENT_TOKEN_MAX_TTL_SECONDS}s Agent Token`,
       check: `exp (${delegatedSession.expiresAtSec}) > now (${nowSec})`,
       outcome: "REJECTED",
-      details:
-        "Delegated 60s agent token has expired. Click 'Re-Exchange OBO Token' to mint a fresh short-lived token."
+      details: `Delegated ${AGENT_TOKEN_MAX_TTL_SECONDS}s agent token has expired. Click 'Re-Exchange OBO Token' to mint a fresh short-lived token.`
     };
     return {
       endpoint,
@@ -551,7 +551,7 @@ export function simulateMcpToolCall(
       data: {
         error: "delegated_token_expired",
         tool: toolSpec.name,
-        message: "Short-lived 60s RFC 8693 agent token expired. Re-exchange required.",
+        message: `Short-lived ${AGENT_TOKEN_MAX_TTL_SECONDS}s RFC 8693 agent token expired. Re-exchange required.`,
         defenseTrace,
         policyEvaluation: "BROWSER_SIMULATION_MODE"
       }

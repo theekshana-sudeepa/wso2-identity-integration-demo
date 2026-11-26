@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { AGENT_TOKEN_MAX_TTL_SECONDS } from "../lib/agentPolicy";
 import {
   API_ENDPOINTS,
   evaluateEndpointAccess,
@@ -126,8 +127,10 @@ describe("Frontend Identity Security Engine", () => {
     const fixedNow = 1_800_000_000;
     const obo = createDelegatedAgentSession(adminClaims, config, fixedNow);
 
-    expect(obo.ttlSeconds).toBe(60);
-    expect(obo.expiresAtSec - obo.issuedAtSec).toBe(60);
+    expect(obo.ttlSeconds).toBe(AGENT_TOKEN_MAX_TTL_SECONDS);
+    expect(obo.expiresAtSec - obo.issuedAtSec).toBe(AGENT_TOKEN_MAX_TTL_SECONDS);
+    expect(obo.audience).toBe(config.mcpAudience);
+    expect(obo.audience).not.toBe(config.audience);
     expect(obo.actor.sub).toBe("agent:choreo-integrator-bot");
     expect(obo.grantedScopes).toEqual(["orders:read"]);
     expect(obo.strippedScopes).toContain("admin:write");

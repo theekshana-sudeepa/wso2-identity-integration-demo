@@ -1,3 +1,5 @@
+import { AGENT_TOKEN_MAX_TTL_SECONDS } from "./agentPolicy";
+
 export type IdpPreset = "wso2is" | "asgardeo";
 
 export interface IdpPresetMeta {
@@ -39,6 +41,7 @@ export interface OidcConfig {
   readonly issuer: string;
   readonly jwksUri: string;
   readonly audience: string;
+  readonly mcpAudience: string;
   readonly clientId: string;
   readonly redirectUri: string;
   readonly scope: string;
@@ -139,19 +142,26 @@ export function getOidcConfig(preset: IdpPreset = getInitialPreset()): OidcConfi
       ? window.location.origin
       : "http://localhost:5173";
 
+  const backendApiUrl = (import.meta.env.VITE_BACKEND_API_URL || "http://localhost:5050").replace(
+    /\/+$/,
+    ""
+  );
+  const mcpAudience = (import.meta.env.VITE_MCP_AUDIENCE || `${backendApiUrl}/api/mcp`).replace(
+    /\/+$/,
+    ""
+  );
+
   return {
     preset,
     baseUrl,
     issuer: `${baseUrl}/oauth2/token`,
     jwksUri: `${baseUrl}/oauth2/jwks`,
     audience: presetMeta.defaultAudience,
+    mcpAudience,
     clientId: import.meta.env.VITE_CLIENT_ID || "",
     redirectUri: import.meta.env.VITE_REDIRECT_URI || `${origin}/callback`,
     scope: import.meta.env.VITE_SCOPE || "openid profile email groups",
-    backendApiUrl: (import.meta.env.VITE_BACKEND_API_URL || "http://localhost:5050").replace(
-      /\/+$/,
-      ""
-    )
+    backendApiUrl
   };
 }
 
@@ -446,7 +456,7 @@ export function createDelegatedAgentSession(
   nowSecOverride?: number
 ): DelegatedAgentSession {
   const nowSec = nowSecOverride ?? Math.floor(Date.now() / 1000);
-  const ttlSeconds = 60;
+  const ttlSeconds = AGENT_TOKEN_MAX_TTL_SECONDS;
   const presetMeta = IDP_PRESETS[config.preset];
 
   const humanSubject = humanClaims?.sub ?? "usr_4b21d90e_dev";
@@ -476,7 +486,7 @@ export function createDelegatedAgentSession(
     delegation_protocol: "urn:ietf:params:oauth:grant-type:token-exchange"
   };
 
-  const audience = `${config.audience}:mcp-gateway`;
+  const audience = config.mcpAudience;
 
   const header: Record<string, unknown> = {
     alg: "RS256",

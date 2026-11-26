@@ -1,3 +1,4 @@
+import { AGENT_TOKEN_MAX_TTL_SECONDS } from "../lib/agentPolicy";
 import {
   memo,
   useCallback,
@@ -572,7 +573,7 @@ export const OidcFlowVisualizer = memo(function OidcFlowVisualizer({
         id: "agent_mcp",
         step: "06",
         title: "AI Agent OBO -> MCP",
-        subtitle: "RFC 8693 · act · 60s TTL",
+        subtitle: `RFC 8693 · act · ${AGENT_TOKEN_MAX_TTL_SECONDS}s TTL`,
         edgeLabel: "",
         rfcBadge: "RFC 8693 OBO · MCP Guard",
         stateTone: mcpBlocked ? "blocked" : mcpOk ? "verified" : "active",
@@ -590,13 +591,13 @@ export const OidcFlowVisualizer = memo(function OidcFlowVisualizer({
             sub: "agent:choreo-integrator-bot",
             client_id: "choreo-mcp-agent-v1"
           },
-          audience_binding: delegatedSession?.audience ?? `${config.audience}:mcp-gateway`,
+          audience_binding: delegatedSession?.audience ?? config.mcpAudience,
           downscoped_scopes: delegatedSession?.grantedScopes ?? ["orders:read"],
           stripped_privileged_scopes: delegatedSession?.strippedScopes ?? [
             "admin:write",
             "refunds:execute"
           ],
-          ttl_seconds: delegatedSession?.ttlSeconds ?? 60,
+          ttl_seconds: delegatedSession?.ttlSeconds ?? AGENT_TOKEN_MAX_TTL_SECONDS,
           lastMcpDecision: lastMcpResult
             ? {
                 status: lastMcpResult.status,
@@ -607,7 +608,7 @@ export const OidcFlowVisualizer = memo(function OidcFlowVisualizer({
         },
         invariants: [
           "RFC 8693 Token Exchange binds the AI agent identity in act.sub while preserving human accountability in sub.",
-          "Privilege attenuation strips high-risk scopes (admin:write, refunds:execute) and caps TTL to 60 seconds.",
+          `Privilege attenuation strips high-risk scopes (admin:write, refunds:execute) and caps TTL to ${AGENT_TOKEN_MAX_TTL_SECONDS} seconds.`,
           "POST /api/mcp/tools/call enforces requireAgentDelegation() + scope-subset + human step-up consent."
         ],
         telemetry: [

@@ -1,5 +1,7 @@
 import express, { type RequestHandler, type Router } from "express";
-import { authenticateToken } from "../middleware/authMiddleware.js";
+import identityConfig from "../config/identityConfig.js";
+import { createAuthMiddleware } from "../middleware/authMiddleware.js";
+import { sendBearerError } from "../middleware/bearerChallenge.js";
 import {
   evaluateMcpToolAuthorization,
   requireAgentDelegation
@@ -17,17 +19,21 @@ function parseMcpToolName(raw: unknown): McpToolName | null {
   return null;
 }
 
-export function createMcpRouter(authMiddleware: RequestHandler = authenticateToken): Router {
+export const authenticateMcpToken: RequestHandler = createAuthMiddleware({
+  audience: identityConfig.mcpAudience
+});
+
+export function createMcpRouter(authMiddleware: RequestHandler = authenticateMcpToken): Router {
   const router = express.Router();
 
   router.post(
     "/tools/call",
     authMiddleware,
-    requireAgentDelegation({ maxTtlSeconds: 300 }),
+    requireAgentDelegation(),
     (req, res) => {
       const user = req.user;
       if (!user || !user.actor) {
-        res.status(401).json({
+        sendBearerError(res, 401, null, {
           error: "unauthorized",
           message: "Missing delegated agent authentication context."
         });
@@ -54,16 +60,25 @@ export function createMcpRouter(authMiddleware: RequestHandler = authenticateTok
 
       const decision = evaluateMcpToolAuthorization(user, tool);
       if (!decision.allowed) {
-        res.status(decision.status).json({
-          error: decision.error,
-          message: decision.message,
-          tool: decision.tool,
-          requiredScope: decision.requiredScope,
-          grantedScopes: user.scopes,
-          delegatedBy: user.sub,
-          actor: user.actor,
-          defenseTrace: decision.defenseTrace
-        });
+        sendBearerError(
+          res,
+          decision.status,
+          {
+            error: "insufficient_scope",
+            description: decision.message,
+            scope: [decision.requiredScope]
+          },
+          {
+            error: decision.error,
+            message: decision.message,
+            tool: decision.tool,
+            requiredScope: decision.requiredScope,
+            grantedScopes: user.scopes,
+            delegatedBy: user.sub,
+            actor: user.actor,
+            defenseTrace: decision.defenseTrace
+          }
+        );
         return;
       }
 

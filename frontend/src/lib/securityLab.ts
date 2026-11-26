@@ -1,3 +1,4 @@
+import { AGENT_TOKEN_MAX_TTL_SECONDS } from "./agentPolicy";
 import {
   base64UrlEncodeJson,
   IDP_PRESETS,
@@ -673,7 +674,7 @@ export function generateCodeSnippets(input: CodeExporterInput): GeneratedCodeSni
               "admin:write",
               "refunds:execute"
             ],
-            maxTtlSeconds: 60,
+            maxTtlSeconds: AGENT_TOKEN_MAX_TTL_SECONDS,
             mcpGatewayEndpoint: "/api/mcp/tools/call"
           }
         }

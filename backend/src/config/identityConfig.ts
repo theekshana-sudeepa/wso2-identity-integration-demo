@@ -26,6 +26,7 @@ const identityConfig: IdentityConfig = {
   wso2BaseUrl: baseUrl,
   issuer: process.env.WSO2_ISSUER || `${baseUrl}/oauth2/token`,
   audience: process.env.WSO2_AUDIENCE || "wso2-api-demo",
+  mcpAudience: process.env.MCP_AUDIENCE || "http://localhost:5050/api/mcp",
   jwksUri: process.env.WSO2_JWKS_URI || `${baseUrl}/oauth2/jwks`,
   allowSelfSignedCerts: process.env.ALLOW_SELF_SIGNED_CERTS === "true",
   jwksCacheMaxAgeMs: parsePositiveInt(process.env.JWKS_CACHE_MAX_AGE_MS, 10 * 60 * 1000),
