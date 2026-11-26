@@ -1,6 +1,12 @@
 import { AGENT_TOKEN_MAX_TTL_SECONDS } from "./agentPolicy";
+import {
+  SIM_ACTIVE_KID,
+  signBrowserRs256Jwt
+} from "./browserCrypto";
 
 export type IdpPreset = "wso2is" | "asgardeo";
+export type DemoPersona = "user" | "admin" | "auditor";
+export type StsMode = "dev-idp" | "simulated-sts";
 
 export interface IdpPresetMeta {
   readonly id: IdpPreset;
@@ -55,8 +61,9 @@ export interface TokenSession {
   readonly expiresIn: number;
   readonly issuedAt: number;
   readonly mode: "live" | "demo";
-  readonly demoRole?: "user" | "admin";
+  readonly demoRole?: DemoPersona;
   readonly preset: IdpPreset;
+  readonly stsMode?: StsMode;
 }
 
 export interface ActorClaim {
@@ -78,6 +85,7 @@ export interface DelegatedAgentSession {
   readonly issuedAtSec: number;
   readonly expiresAtSec: number;
   readonly preset: IdpPreset;
+  readonly stsMode?: StsMode;
 }
 
 export interface DecodedJwt {
@@ -111,6 +119,8 @@ export interface ParsedJwtClaims {
 export interface PkceTelemetry {
   readonly codeVerifier: string;
   readonly codeChallenge: string;
+  readonly tamperedCodeVerifier?: string;
+  readonly tamperedCodeChallenge?: string;
   readonly state: string;
   readonly challengeMethod: "S256";
   readonly entropyBits: number;
@@ -193,10 +203,14 @@ export async function generateCodeChallenge(codeVerifier: string): Promise<strin
 export async function generateLivePkceTelemetry(): Promise<PkceTelemetry> {
   const codeVerifier = generateRandomString(48);
   const codeChallenge = await generateCodeChallenge(codeVerifier);
+  const tamperedCodeVerifier = `${codeVerifier.slice(0, -8)}TAMPERED`;
+  const tamperedCodeChallenge = await generateCodeChallenge(tamperedCodeVerifier);
   const state = generateRandomString(24);
   return {
     codeVerifier,
     codeChallenge,
+    tamperedCodeVerifier,
+    tamperedCodeChallenge,
     state,
     challengeMethod: "S256",
     entropyBits: 384,
@@ -403,7 +417,53 @@ export function parseJwtClaims(decoded: DecodedJwt): ParsedJwtClaims {
   };
 }
 
-export function createDemoSession(role: "user" | "admin", config: OidcConfig): TokenSession {
+function buildDemoPersonaPayload(
+  role: DemoPersona,
+  config: OidcConfig,
+  nowSec: number
+): Record<string, unknown> {
+  const isAdmin = role === "admin";
+  const isAuditor = role === "auditor";
+  const sub = isAdmin
+    ? "usr_9f82a10c_admin"
+    : isAuditor
+      ? "usr_7c31e44a_auditor"
+      : "usr_4b21d90e_dev";
+  const username = isAdmin
+    ? "admin@acme-identity.example"
+    : isAuditor
+      ? "auditor@acme-identity.example"
+      : "developer@acme-identity.example";
+  const groups = isAdmin
+    ? ["admin", "integration-lead", "developer"]
+    : isAuditor
+      ? ["auditor"]
+      : ["developer"];
+  const scope = isAdmin
+    ? "openid profile email groups read:profile orders:read write:reports admin:write admin:audit"
+    : isAuditor
+      ? "openid profile email groups read:profile orders:read admin:audit"
+      : "openid profile email groups read:profile orders:read";
+
+  return {
+    sub,
+    username,
+    email: username,
+    iss: config.issuer,
+    aud: config.audience,
+    azp: config.clientId || "choreo-spa-public-client",
+    groups,
+    scope,
+    may_act: {
+      sub: "agent:choreo-integrator-bot",
+      client_id: "choreo-mcp-agent-v1"
+    },
+    iat: nowSec,
+    exp: nowSec + 3600
+  };
+}
+
+export function createDemoSession(role: DemoPersona, config: OidcConfig): TokenSession {
   const nowSec = Math.floor(Date.now() / 1000);
   const presetMeta = IDP_PRESETS[config.preset];
   const header = {
@@ -411,21 +471,7 @@ export function createDemoSession(role: "user" | "admin", config: OidcConfig): T
     typ: "JWT",
     kid: presetMeta.demoKid
   };
-  const payload = {
-    sub: role === "admin" ? "usr_9f82a10c_admin" : "usr_4b21d90e_dev",
-    username: role === "admin" ? "admin@acme-identity.example" : "developer@acme-identity.example",
-    email: role === "admin" ? "admin@acme-identity.example" : "developer@acme-identity.example",
-    iss: config.issuer,
-    aud: config.audience,
-    azp: config.clientId || "choreo-spa-public-client",
-    groups: role === "admin" ? ["admin", "integration-lead", "developer"] : ["developer"],
-    scope:
-      role === "admin"
-        ? "openid profile email groups read:profile orders:read write:reports admin:write admin:audit"
-        : "openid profile email groups read:profile orders:read",
-    iat: nowSec,
-    exp: nowSec + 3600
-  };
+  const payload = buildDemoPersonaPayload(role, config, nowSec);
 
   const token = `${base64UrlEncodeJson(header)}.${base64UrlEncodeJson(payload)}.demo_rs256_signature_requires_idp_jwks`;
 
@@ -436,7 +482,34 @@ export function createDemoSession(role: "user" | "admin", config: OidcConfig): T
     issuedAt: Date.now(),
     mode: "demo",
     demoRole: role,
-    preset: config.preset
+    preset: config.preset,
+    stsMode: "simulated-sts"
+  };
+  saveSession(session);
+  return session;
+}
+
+export async function createSimulatedStsDemoSession(
+  role: DemoPersona,
+  config: OidcConfig
+): Promise<TokenSession> {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const payload = buildDemoPersonaPayload(role, config, nowSec);
+  const token = await signBrowserRs256Jwt(
+    { alg: "RS256", typ: "JWT", kid: SIM_ACTIVE_KID },
+    payload,
+    "active"
+  );
+
+  const session: TokenSession = {
+    accessToken: token,
+    tokenType: "Bearer",
+    expiresIn: 3600,
+    issuedAt: Date.now(),
+    mode: "demo",
+    demoRole: role,
+    preset: config.preset,
+    stsMode: "simulated-sts"
   };
   saveSession(session);
   return session;
@@ -524,7 +597,41 @@ export function createDelegatedAgentSession(
     ttlSeconds,
     issuedAtSec: nowSec,
     expiresAtSec: nowSec + ttlSeconds,
-    preset: config.preset
+    preset: config.preset,
+    stsMode: "simulated-sts"
+  };
+}
+
+export async function createSimulatedStsDelegatedSession(
+  humanClaims: ParsedJwtClaims | null,
+  config: OidcConfig,
+  nowSecOverride?: number
+): Promise<DelegatedAgentSession> {
+  const base = createDelegatedAgentSession(humanClaims, config, nowSecOverride);
+  const payload: Record<string, unknown> = {
+    sub: base.humanSubject,
+    username: base.humanUsername,
+    iss: config.issuer,
+    aud: base.audience,
+    azp: base.actor.client_id,
+    act: base.actor,
+    scope: base.grantedScopes.join(" "),
+    groups: ["delegated-agent-readonly"],
+    delegation_depth: 1,
+    original_scopes: base.originalScopes,
+    stripped_scopes: base.strippedScopes,
+    iat: base.issuedAtSec,
+    exp: base.expiresAtSec
+  };
+  const signedToken = await signBrowserRs256Jwt(
+    { alg: "RS256", typ: "at+jwt", kid: SIM_ACTIVE_KID },
+    payload,
+    "active"
+  );
+  return {
+    ...base,
+    accessToken: signedToken,
+    stsMode: "simulated-sts"
   };
 }
 
@@ -534,6 +641,16 @@ export function loadSession(): TokenSession | null {
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed) || typeof parsed.accessToken !== "string") return null;
+    const demoRole: DemoPersona | undefined =
+      parsed.demoRole === "admin" ||
+      parsed.demoRole === "user" ||
+      parsed.demoRole === "auditor"
+        ? parsed.demoRole
+        : undefined;
+    const stsMode: StsMode | undefined =
+      parsed.stsMode === "dev-idp" || parsed.stsMode === "simulated-sts"
+        ? parsed.stsMode
+        : undefined;
     return {
       accessToken: parsed.accessToken,
       idToken: typeof parsed.idToken === "string" ? parsed.idToken : undefined,
@@ -541,9 +658,9 @@ export function loadSession(): TokenSession | null {
       expiresIn: typeof parsed.expiresIn === "number" ? parsed.expiresIn : 3600,
       issuedAt: typeof parsed.issuedAt === "number" ? parsed.issuedAt : Date.now(),
       mode: parsed.mode === "live" ? "live" : "demo",
-      demoRole:
-        parsed.demoRole === "admin" || parsed.demoRole === "user" ? parsed.demoRole : undefined,
-      preset: parsed.preset === "asgardeo" ? "asgardeo" : "wso2is"
+      demoRole,
+      preset: parsed.preset === "asgardeo" ? "asgardeo" : "wso2is",
+      stsMode
     };
   } catch {
     return null;

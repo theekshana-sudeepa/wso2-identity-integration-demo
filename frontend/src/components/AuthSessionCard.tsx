@@ -13,6 +13,7 @@ import {
 import {
   IDP_PRESETS,
   IDP_PRESET_KEYS,
+  type DemoPersona,
   type IdpPreset,
   type OidcConfig,
   type TokenSession
@@ -24,7 +25,7 @@ interface AuthSessionCardProps {
   readonly authError: string | null;
   readonly onSelectPreset: (preset: IdpPreset) => void;
   readonly onLiveLogin: () => Promise<void>;
-  readonly onDemoLogin: (role: "user" | "admin") => void;
+  readonly onDemoLogin: (role: DemoPersona) => void;
   readonly onLogout: () => void;
   readonly onNotifyCopy?: (message: string) => void;
 }
@@ -127,6 +128,14 @@ export const AuthSessionCard = memo(function AuthSessionCard({
           <UserCheck size={14} />
           Demo Admin
         </button>
+        <button
+          type="button"
+          className={`btn ${session?.demoRole === "auditor" ? "btn-selected" : ""}`}
+          onClick={() => onDemoLogin("auditor")}
+        >
+          <KeyRound size={14} />
+          Demo Auditor
+        </button>
       </div>
 
       {session && (
@@ -136,7 +145,21 @@ export const AuthSessionCard = memo(function AuthSessionCard({
             <span>
               {session.mode === "live"
                 ? `Live RS256 Bearer (${activePreset.shortLabel})`
-                : `Simulated ${session.demoRole === "admin" ? "Admin" : "Developer"} RS256 JWT`}
+                : session.stsMode === "dev-idp"
+                  ? `Dev IdP RS256 · ${
+                      session.demoRole === "admin"
+                        ? "Admin"
+                        : session.demoRole === "auditor"
+                          ? "Auditor"
+                          : "Developer"
+                    }`
+                  : `Simulated STS · ${
+                      session.demoRole === "admin"
+                        ? "Admin"
+                        : session.demoRole === "auditor"
+                          ? "Auditor"
+                          : "Developer"
+                    } RS256 JWT`}
             </span>
           </div>
           <div className="session-footer-actions">

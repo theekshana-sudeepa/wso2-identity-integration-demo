@@ -4,19 +4,24 @@ import {
   API_ENDPOINTS,
   evaluateEndpointAccess,
   simulateMcpToolCall,
-  simulateRbacPolicyCall
+  simulateRbacPolicyCall,
+  simulateVerifiedMcpToolCall,
+  simulateVerifiedRbacPolicyCall
 } from "../lib/apiClient";
+import { verifyBrowserRs256Jwt } from "../lib/browserCrypto";
 import {
   base64UrlEncodeJson,
   createDelegatedAgentSession,
   createDemoSession,
+  createSimulatedStsDelegatedSession,
+  createSimulatedStsDemoSession,
   decodeJwt,
   generateCodeChallenge,
   generateLivePkceTelemetry,
   getOidcConfig,
   parseJwtClaims
 } from "../lib/pkce";
-import { evaluateFaultScenario, MCP_TOOLS } from "../lib/securityLab";
+import { evaluateFaultScenario, MCP_TOOLS, mintSimulatedFaultToken } from "../lib/securityLab";
 
 describe("Frontend Identity Security Engine", () => {
   it("computes the exact RFC 7636 Appendix B S256 PKCE code_challenge", async () => {
@@ -156,5 +161,90 @@ describe("Frontend Identity Security Engine", () => {
     const expiredRes = simulateMcpToolCall(orderTool, obo, config, undefined, fixedNow + 65);
     expect(expiredRes.status).toBe(401);
     expect(expiredRes.ok).toBe(false);
+  });
+
+  it("signs and verifies Browser Simulation Mode tokens with real Web Crypto RS256 and side-by-side SHA-256 PKCE digests", async () => {
+    const config = getOidcConfig("wso2is");
+    const pkce = await generateLivePkceTelemetry();
+    expect(pkce.tamperedCodeChallenge).toBeDefined();
+    expect(pkce.tamperedCodeChallenge).not.toBe(pkce.codeChallenge);
+
+    const pkceFault = evaluateFaultScenario(
+      { id: "pkce_verifier_mismatch" },
+      { config, claims: null, pkceTelemetry: pkce }
+    );
+    expect(pkceFault.wirePayload.stored_code_challenge).toBe(pkce.codeChallenge);
+    expect(pkceFault.wirePayload.computed_tampered_challenge).toBe(pkce.tamperedCodeChallenge);
+
+    const signedAdmin = await createSimulatedStsDemoSession("admin", config);
+    expect(signedAdmin.stsMode).toBe("simulated-sts");
+    const adminVerify = await verifyBrowserRs256Jwt(signedAdmin.accessToken, {
+      expectedIssuer: config.issuer,
+      expectedAudience: config.audience
+    });
+    expect(adminVerify.ok).toBe(true);
+
+    const adminDecoded = decodeJwt(signedAdmin.accessToken);
+    const adminClaims = adminDecoded ? parseJwtClaims(adminDecoded) : null;
+    const adminAuditSpec = API_ENDPOINTS[3];
+
+    const allowAudit = await simulateVerifiedRbacPolicyCall(
+      adminAuditSpec,
+      config,
+      signedAdmin,
+      adminClaims
+    );
+    expect(allowAudit.status).toBe(200);
+
+    // Real Web Crypto fault tokens fail cryptographic verification in Simulated Resource Server
+    const hs256Call = await simulateVerifiedRbacPolicyCall(
+      adminAuditSpec,
+      config,
+      signedAdmin,
+      adminClaims,
+      { id: "jwt_alg_downgrade", algorithm: "HS256" }
+    );
+    expect(hs256Call.status).toBe(401);
+
+    const unknownKidCall = await simulateVerifiedRbacPolicyCall(
+      adminAuditSpec,
+      config,
+      signedAdmin,
+      adminClaims,
+      { id: "jwks_kid_miss", resolution: "reject_unknown_kid" }
+    );
+    expect(unknownKidCall.status).toBe(401);
+
+    const rotatedKidCall = await simulateVerifiedRbacPolicyCall(
+      adminAuditSpec,
+      config,
+      signedAdmin,
+      adminClaims,
+      { id: "jwks_kid_miss", resolution: "recover_rotated_key" }
+    );
+    expect(rotatedKidCall.status).toBe(200);
+    expect(rotatedKidCall.defenseTrace?.outcome).toBe("RECOVERED");
+
+    const audSpoofToken = await mintSimulatedFaultToken(
+      { id: "aud_iss_spoof", spoofTarget: "aud" },
+      { config, claims: adminClaims, pkceTelemetry: pkce }
+    );
+    expect(audSpoofToken).not.toBeNull();
+    const audSpoofVerify = await verifyBrowserRs256Jwt(audSpoofToken ?? "", {
+      expectedIssuer: config.issuer,
+      expectedAudience: config.audience
+    });
+    expect(audSpoofVerify.ok).toBe(false);
+    if (!audSpoofVerify.ok) {
+      expect(audSpoofVerify.errorCode).toBe("invalid_audience");
+    }
+
+    const signedObo = await createSimulatedStsDelegatedSession(adminClaims, config);
+    const mcpOrderAllow = await simulateVerifiedMcpToolCall(
+      MCP_TOOLS[0],
+      signedObo,
+      config
+    );
+    expect(mcpOrderAllow.status).toBe(200);
   });
 });

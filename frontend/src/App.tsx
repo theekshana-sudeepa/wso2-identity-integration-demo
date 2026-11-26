@@ -8,9 +8,14 @@ import { JwtClaimsInspector } from "./components/JwtClaimsInspector";
 import { OidcFlowVisualizer } from "./components/OidcFlowVisualizer";
 import {
   checkBackendHealth,
+  exchangeDevIdpOboToken,
+  exchangeDevIdpPersonaToken,
   invokeProtectedApi,
-  simulateMcpToolCall,
+  probeDevIdpPkceMismatch,
+  requestDevIdpFaultToken,
   simulateRbacPolicyCall,
+  simulateVerifiedMcpToolCall,
+  simulateVerifiedRbacPolicyCall,
   type ApiCallResult,
   type ApiEndpointSpec,
   type BackendHealthStatus,
@@ -20,6 +25,8 @@ import {
   clearSession,
   createDelegatedAgentSession,
   createDemoSession,
+  createSimulatedStsDelegatedSession,
+  createSimulatedStsDemoSession,
   decodeJwt,
   generateLivePkceTelemetry,
   getInitialPreset,
@@ -29,6 +36,7 @@ import {
   loadSession,
   parseJwtClaims,
   type DelegatedAgentSession,
+  type DemoPersona,
   type IdpPreset,
   type PkceTelemetry,
   type TokenSession
@@ -220,31 +228,114 @@ export function App() {
   }, []);
 
   const handleSwitchFlowMode = useCallback(
-    (nextFlowMode: FlowMode) => {
+    async (nextFlowMode: FlowMode) => {
       setFlowMode(nextFlowMode);
       if (nextFlowMode === "agent") {
+        let activeSession = session;
         let activeHumanClaims = claims;
-        if (!session) {
-          const demo = createDemoSession("admin", config);
-          setSession(demo);
-          const dec = decodeJwt(demo.accessToken);
+        const useLiveDevIdp =
+          executionMode === "live" &&
+          backendHealth.reachable &&
+          backendHealth.devIdpEnabled === true;
+
+        if (!activeSession || (useLiveDevIdp && activeSession.stsMode !== "dev-idp")) {
+          const role: DemoPersona = activeSession?.demoRole ?? "admin";
+          try {
+            activeSession = useLiveDevIdp
+              ? await exchangeDevIdpPersonaToken(
+                  config.backendApiUrl,
+                  role,
+                  config,
+                  pkceTelemetry
+                )
+              : await createSimulatedStsDemoSession(role, config);
+          } catch {
+            activeSession = createDemoSession(role, config);
+          }
+          setSession(activeSession);
+          const dec = decodeJwt(activeSession.accessToken);
           activeHumanClaims = dec ? parseJwtClaims(dec) : null;
         }
-        const obo = createDelegatedAgentSession(activeHumanClaims, config);
-        setDelegatedSession(obo);
+
+        try {
+          const obo = useLiveDevIdp
+            ? await exchangeDevIdpOboToken(
+                config.backendApiUrl,
+                activeSession.accessToken,
+                config,
+                activeHumanClaims
+              )
+            : await createSimulatedStsDelegatedSession(activeHumanClaims, config);
+          setDelegatedSession(obo);
+        } catch {
+          setDelegatedSession(createDelegatedAgentSession(activeHumanClaims, config));
+        }
         setSelectedStage("agent_mcp");
       } else {
         setSelectedStage((current) => (current === "agent_mcp" ? "rbac" : current));
       }
     },
-    [claims, config, session]
+    [
+      backendHealth.devIdpEnabled,
+      backendHealth.reachable,
+      claims,
+      config,
+      executionMode,
+      pkceTelemetry,
+      session
+    ]
   );
 
-  const handleRefreshDelegatedToken = useCallback(() => {
-    const fresh = createDelegatedAgentSession(claims, config);
-    setDelegatedSession(fresh);
-    showToast("Minted fresh 60s RFC 8693 OBO delegated agent token");
-  }, [claims, config, showToast]);
+  const handleRefreshDelegatedToken = useCallback(async () => {
+    const useLiveDevIdp =
+      executionMode === "live" &&
+      backendHealth.reachable &&
+      backendHealth.devIdpEnabled === true;
+    try {
+      let activeSession = session;
+      let activeClaims = claims;
+      if (useLiveDevIdp && (!activeSession || activeSession.stsMode !== "dev-idp")) {
+        activeSession = await exchangeDevIdpPersonaToken(
+          config.backendApiUrl,
+          activeSession?.demoRole ?? "admin",
+          config,
+          pkceTelemetry
+        );
+        setSession(activeSession);
+        const dec = decodeJwt(activeSession.accessToken);
+        activeClaims = dec ? parseJwtClaims(dec) : null;
+      }
+
+      const fresh =
+        useLiveDevIdp && activeSession
+          ? await exchangeDevIdpOboToken(
+              config.backendApiUrl,
+              activeSession.accessToken,
+              config,
+              activeClaims
+            )
+          : await createSimulatedStsDelegatedSession(activeClaims, config);
+      setDelegatedSession(fresh);
+      showToast(
+        useLiveDevIdp
+          ? "Exchanged fresh 60s RFC 8693 OBO token via Local Dev IdP STS"
+          : "Minted fresh 60s RFC 8693 OBO token via Simulated STS (Web Crypto RS256)"
+      );
+    } catch {
+      const fallback = createDelegatedAgentSession(claims, config);
+      setDelegatedSession(fallback);
+      showToast("Minted fresh 60s RFC 8693 OBO delegated agent token");
+    }
+  }, [
+    backendHealth.devIdpEnabled,
+    backendHealth.reachable,
+    claims,
+    config,
+    executionMode,
+    pkceTelemetry,
+    session,
+    showToast
+  ]);
 
   const handleChangeFault = useCallback((nextFault: FaultState) => {
     setActiveFault(nextFault);
@@ -291,19 +382,61 @@ export function App() {
   }, [config]);
 
   const onDemoLogin = useCallback(
-    (role: "user" | "admin") => {
+    async (role: DemoPersona) => {
       setAuthError(null);
-      const demoSession = createDemoSession(role, config);
-      setSession(demoSession);
-      if (flowMode === "agent") {
-        const dec = decodeJwt(demoSession.accessToken);
-        setDelegatedSession(
-          createDelegatedAgentSession(dec ? parseJwtClaims(dec) : null, config)
-        );
+      const useLiveDevIdp =
+        executionMode === "live" &&
+        backendHealth.reachable &&
+        backendHealth.devIdpEnabled === true;
+      let demoSession: TokenSession;
+      try {
+        demoSession = useLiveDevIdp
+          ? await exchangeDevIdpPersonaToken(
+              config.backendApiUrl,
+              role,
+              config,
+              pkceTelemetry
+            )
+          : await createSimulatedStsDemoSession(role, config);
+      } catch {
+        demoSession = createDemoSession(role, config);
       }
-      showToast(`Loaded ${role === "admin" ? "Demo Admin" : "Demo Developer"} RS256 session`);
+      setSession(demoSession);
+
+      const dec = decodeJwt(demoSession.accessToken);
+      const parsedClaims = dec ? parseJwtClaims(dec) : null;
+      if (flowMode === "agent") {
+        try {
+          const obo = useLiveDevIdp
+            ? await exchangeDevIdpOboToken(
+                config.backendApiUrl,
+                demoSession.accessToken,
+                config,
+                parsedClaims
+              )
+            : await createSimulatedStsDelegatedSession(parsedClaims, config);
+          setDelegatedSession(obo);
+        } catch {
+          setDelegatedSession(createDelegatedAgentSession(parsedClaims, config));
+        }
+      }
+      const roleLabel =
+        role === "admin" ? "Admin" : role === "auditor" ? "Auditor" : "Developer";
+      showToast(
+        useLiveDevIdp
+          ? `Exchanged PKCE S256 code for ${roleLabel} RS256 JWT at Dev IdP`
+          : `Signed ${roleLabel} RS256 JWT via Simulated STS (Web Crypto)`
+      );
     },
-    [config, flowMode, showToast]
+    [
+      backendHealth.devIdpEnabled,
+      backendHealth.reachable,
+      config,
+      executionMode,
+      flowMode,
+      pkceTelemetry,
+      showToast
+    ]
   );
 
   const onLogout = useCallback(() => {
@@ -322,10 +455,78 @@ export function App() {
       try {
         const shouldSimulate = executionMode === "dry-run" || !backendHealth.reachable;
         if (shouldSimulate) {
-          const simulated = simulateRbacPolicyCall(spec, config, session, claims, activeFault);
+          let activeSession = session;
+          let activeClaims = claims;
+          if (
+            activeSession &&
+            activeSession.accessToken.endsWith("demo_rs256_signature_requires_idp_jwks")
+          ) {
+            activeSession = await createSimulatedStsDemoSession(
+              activeSession.demoRole ?? "user",
+              config
+            );
+            setSession(activeSession);
+            const dec = decodeJwt(activeSession.accessToken);
+            activeClaims = dec ? parseJwtClaims(dec) : null;
+          }
+          const simulated = await simulateVerifiedRbacPolicyCall(
+            spec,
+            config,
+            activeSession,
+            activeClaims,
+            activeFault,
+            pkceTelemetry
+          );
           setApiResult(simulated);
         } else {
-          const tokenToSend = faultEval.mutatedToken ?? session?.accessToken;
+          if (activeFault.id === "pkce_verifier_mismatch" && backendHealth.devIdpEnabled) {
+            const pkceMismatchResult = await probeDevIdpPkceMismatch(
+              config.backendApiUrl,
+              pkceTelemetry
+            );
+            setApiResult(pkceMismatchResult);
+            return;
+          }
+          if (activeFault.id === "csrf_state_mismatch") {
+            const csrfAborted = simulateRbacPolicyCall(
+              spec,
+              config,
+              session,
+              claims,
+              activeFault
+            );
+            setApiResult(csrfAborted);
+            return;
+          }
+
+          let activeSession = session;
+          if (
+            activeSession &&
+            activeSession.stsMode !== "dev-idp" &&
+            backendHealth.devIdpEnabled
+          ) {
+            activeSession = await exchangeDevIdpPersonaToken(
+              config.backendApiUrl,
+              activeSession.demoRole ?? "user",
+              config,
+              pkceTelemetry
+            );
+            setSession(activeSession);
+          }
+
+          let tokenToSend = activeSession?.accessToken;
+          if (activeFault.id !== "none") {
+            const liveFaultToken = backendHealth.devIdpEnabled
+              ? await requestDevIdpFaultToken(
+                  config.backendApiUrl,
+                  activeFault,
+                  config.audience,
+                  activeSession?.demoRole
+                )
+              : null;
+            tokenToSend = liveFaultToken ?? faultEval.mutatedToken ?? tokenToSend;
+          }
+
           const liveResult = await invokeProtectedApi(
             config.backendApiUrl,
             spec.path,
@@ -339,24 +540,102 @@ export function App() {
         setLoadingEndpoint(null);
       }
     },
-    [activeFault, backendHealth.reachable, claims, config, executionMode, faultEval.mutatedToken, session]
+    [
+      activeFault,
+      backendHealth.devIdpEnabled,
+      backendHealth.reachable,
+      claims,
+      config,
+      executionMode,
+      faultEval.mutatedToken,
+      pkceTelemetry,
+      session
+    ]
   );
 
   const handleInvokeMcpTool = useCallback(
     async (toolSpec: McpToolSpec) => {
-      const activeObo = delegatedSession ?? createDelegatedAgentSession(claims, config);
-      if (!delegatedSession) {
-        setDelegatedSession(activeObo);
-      }
       setMcpLoadingTool(toolSpec.name);
       try {
         const shouldSimulate = executionMode === "dry-run" || !backendHealth.reachable;
         if (shouldSimulate) {
-          const simulated = simulateMcpToolCall(toolSpec, activeObo, config, activeFault);
+          let activeObo = delegatedSession;
+          if (
+            !activeObo ||
+            activeObo.accessToken.endsWith("demo_obo_rfc8693_rs256_signature")
+          ) {
+            activeObo = await createSimulatedStsDelegatedSession(claims, config);
+            setDelegatedSession(activeObo);
+          }
+          const simulated = await simulateVerifiedMcpToolCall(
+            toolSpec,
+            activeObo,
+            config,
+            activeFault,
+            pkceTelemetry
+          );
           setLastMcpResult(simulated);
           setApiResult(simulated);
         } else {
-          const tokenToSend = faultEval.mutatedToken ?? activeObo.accessToken;
+          if (activeFault.id === "pkce_verifier_mismatch" && backendHealth.devIdpEnabled) {
+            const pkceMismatchResult = await probeDevIdpPkceMismatch(
+              config.backendApiUrl,
+              pkceTelemetry
+            );
+            setLastMcpResult(pkceMismatchResult);
+            setApiResult(pkceMismatchResult);
+            setSelectedStage("agent_mcp");
+            return;
+          }
+
+          let activeSession = session;
+          let activeClaims = claims;
+          if (
+            backendHealth.devIdpEnabled &&
+            (!activeSession || activeSession.stsMode !== "dev-idp")
+          ) {
+            activeSession = await exchangeDevIdpPersonaToken(
+              config.backendApiUrl,
+              activeSession?.demoRole ?? "admin",
+              config,
+              pkceTelemetry
+            );
+            setSession(activeSession);
+            const dec = decodeJwt(activeSession.accessToken);
+            activeClaims = dec ? parseJwtClaims(dec) : null;
+          }
+
+          let activeObo = delegatedSession;
+          if (
+            backendHealth.devIdpEnabled &&
+            activeSession &&
+            (!activeObo || activeObo.stsMode !== "dev-idp")
+          ) {
+            activeObo = await exchangeDevIdpOboToken(
+              config.backendApiUrl,
+              activeSession.accessToken,
+              config,
+              activeClaims
+            );
+            setDelegatedSession(activeObo);
+          } else if (!activeObo) {
+            activeObo = await createSimulatedStsDelegatedSession(activeClaims, config);
+            setDelegatedSession(activeObo);
+          }
+
+          let tokenToSend = activeObo.accessToken;
+          if (activeFault.id !== "none") {
+            const liveFaultToken = backendHealth.devIdpEnabled
+              ? await requestDevIdpFaultToken(
+                  config.backendApiUrl,
+                  activeFault,
+                  config.mcpAudience,
+                  activeSession?.demoRole
+                )
+              : null;
+            tokenToSend = liveFaultToken ?? faultEval.mutatedToken ?? tokenToSend;
+          }
+
           const liveResult = await invokeProtectedApi(
             config.backendApiUrl,
             "/api/mcp/tools/call",
@@ -374,12 +653,15 @@ export function App() {
     },
     [
       activeFault,
+      backendHealth.devIdpEnabled,
       backendHealth.reachable,
       claims,
       config,
       delegatedSession,
       executionMode,
-      faultEval.mutatedToken
+      faultEval.mutatedToken,
+      pkceTelemetry,
+      session
     ]
   );
 
@@ -496,7 +778,19 @@ export function App() {
         label: "Load Demo Admin Persona",
         hint: "Admin + write:reports",
         keywords: "demo admin persona privileged token",
-        run: () => onDemoLogin("admin")
+        run: () => {
+          void onDemoLogin("admin");
+        }
+      },
+      {
+        id: "persona-auditor",
+        group: "Mode & Personas",
+        label: "Load Demo Auditor Persona",
+        hint: "Read + admin:audit",
+        keywords: "demo auditor persona compliance token",
+        run: () => {
+          void onDemoLogin("auditor");
+        }
       },
       {
         id: "preset-wso2",

@@ -584,6 +584,10 @@ export const OidcFlowVisualizer = memo(function OidcFlowVisualizer({
             : "OBO DELEGATED",
         payloadTitle: "RFC 8693 On-Behalf-Of Token Exchange & MCP Tool Guard",
         payload: {
+          sts_issuer_mode:
+            delegatedSession?.stsMode === "dev-idp"
+              ? "Local Dev IdP / STS (POST /dev-idp/oauth2/token)"
+              : "Simulated STS (Browser Web Crypto RS256)",
           grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
           endpoint: "POST /api/mcp/tools/call",
           subject_human: delegatedSession?.humanSubject ?? "usr_4b21d90e_dev",

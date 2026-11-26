@@ -1,5 +1,12 @@
 import { AGENT_TOKEN_MAX_TTL_SECONDS } from "./agentPolicy";
 import {
+  SIM_ACTIVE_KID,
+  SIM_ROTATED_KID,
+  SIM_UNKNOWN_KID,
+  signBrowserHs256KeyConfusionJwt,
+  signBrowserRs256Jwt
+} from "./browserCrypto";
+import {
   base64UrlEncodeJson,
   IDP_PRESETS,
   type DelegatedAgentSession,
@@ -215,9 +222,14 @@ export function evaluateFaultScenario(
       };
 
     case "pkce_verifier_mismatch": {
-      const expectedChallenge = pkceTelemetry?.codeChallenge ?? "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
-      const originalVerifier = pkceTelemetry?.codeVerifier ?? "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
-      const tamperedVerifier = `${originalVerifier.slice(0, -8)}TAMPERED`;
+      const expectedChallenge =
+        pkceTelemetry?.codeChallenge ?? "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+      const originalVerifier =
+        pkceTelemetry?.codeVerifier ?? "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+      const tamperedVerifier =
+        pkceTelemetry?.tamperedCodeVerifier ?? `${originalVerifier.slice(0, -8)}TAMPERED`;
+      const computedTamperedChallenge =
+        pkceTelemetry?.tamperedCodeChallenge ?? "7xK9pQ2mR5vT8wY1zB4nC7fH0jL3dG6sA9eU2iO5pM8";
       return {
         faultId: "pkce_verifier_mismatch",
         active: true,
@@ -236,7 +248,8 @@ export function evaluateFaultScenario(
           code: "authz_code_88c1e904_intercepted",
           stored_code_challenge: expectedChallenge,
           submitted_code_verifier: tamperedVerifier,
-          recomputed_digest_match: false,
+          computed_tampered_challenge: computedTamperedChallenge,
+          recomputed_digest_match: expectedChallenge === computedTamperedChallenge,
           idp_response: {
             error: "invalid_grant",
             error_description: "PKCE code_verifier does not match stored S256 code_challenge."
@@ -247,10 +260,9 @@ export function evaluateFaultScenario(
           layer: "IdP Token Endpoint PKCE Verification",
           middleware: `${presetMeta.shortLabel} /oauth2/token (RFC 7636 Engine)`,
           rfc: "RFC 7636 §4.6 (Server Verifies code_verifier)",
-          check: "BASE64URL(SHA256(submitted_verifier)) === stored_code_challenge",
+          check: `BASE64URL(SHA256(submitted_verifier)) [${computedTamperedChallenge}] === stored_code_challenge [${expectedChallenge}]`,
           outcome: "REJECTED",
-          details:
-            "Intercepted authorization code cannot be exchanged into tokens without the browser's original 384-bit code_verifier."
+          details: `SHA-256 digest mismatch: stored challenge "${expectedChallenge}" !== computed tampered digest "${computedTamperedChallenge}".`
         }
       };
     }
@@ -517,6 +529,100 @@ export function evaluateFaultScenario(
           details: `Token expired ${skew}s ago (delta: -${skew}s, tolerance: ±5s).`
         }
       };
+    }
+
+    default:
+      return assertNever(fault);
+  }
+}
+
+/**
+ * Mints a cryptographically real forged JWT in the browser using Web Crypto API
+ * (`RSASSA-PKCS1-v1_5` active/rotated/rogue keys or `HMAC-SHA256` with the exported public PEM).
+ */
+export async function mintSimulatedFaultToken(
+  fault: FaultState,
+  context: FaultEvaluationContext & { readonly targetAudience?: string }
+): Promise<string | null> {
+  const { config, claims } = context;
+  const nowSec = context.nowSec ?? Math.floor(Date.now() / 1000);
+  const targetAudience = context.targetAudience ?? config.audience;
+  const baseSub = claims?.sub ?? "usr_4b21d90e_dev";
+  const baseUsername = claims?.username ?? "developer@acme-identity.example";
+  const baseGroups = claims?.groups ?? ["developer"];
+  const baseScope = claims?.scopes.join(" ") || "openid profile email groups read:profile orders:read";
+
+  const basePayload: Record<string, unknown> = {
+    sub: baseSub,
+    username: baseUsername,
+    iss: config.issuer,
+    aud: targetAudience,
+    groups: [...baseGroups],
+    scope: baseScope,
+    iat: nowSec,
+    exp: nowSec + 3600
+  };
+
+  switch (fault.id) {
+    case "none":
+    case "pkce_verifier_mismatch":
+    case "csrf_state_mismatch":
+      return null;
+
+    case "jwt_alg_downgrade": {
+      const escalatedPayload: Record<string, unknown> = {
+        ...basePayload,
+        username: "attacker-escalated@acme.example",
+        groups: ["admin", "superadmin"],
+        scope: "openid admin:audit write:reports orders:read"
+      };
+      if (fault.algorithm === "none") {
+        return `${base64UrlEncodeJson({ alg: "none", typ: "JWT" })}.${base64UrlEncodeJson(escalatedPayload)}.`;
+      }
+      return signBrowserHs256KeyConfusionJwt(
+        { alg: "HS256", typ: "JWT", kid: SIM_ACTIVE_KID },
+        escalatedPayload
+      );
+    }
+
+    case "jwks_kid_miss": {
+      const recovered = fault.resolution === "recover_rotated_key";
+      return signBrowserRs256Jwt(
+        {
+          alg: "RS256",
+          typ: "JWT",
+          kid: recovered ? SIM_ROTATED_KID : SIM_UNKNOWN_KID
+        },
+        basePayload,
+        recovered ? "rotated" : "rogue"
+      );
+    }
+
+    case "aud_iss_spoof": {
+      const isAud = fault.spoofTarget === "aud";
+      return signBrowserRs256Jwt(
+        { alg: "RS256", typ: "JWT", kid: SIM_ACTIVE_KID },
+        {
+          ...basePayload,
+          iss: isAud ? config.issuer : "https://evil-idp.attacker.example/oauth2/token",
+          aud: isAud ? "wrong-tenant-billing-api" : targetAudience
+        },
+        "active"
+      );
+    }
+
+    case "expired_token_skew": {
+      const skew = Math.max(10, fault.skewSeconds);
+      const expSec = nowSec - skew;
+      return signBrowserRs256Jwt(
+        { alg: "RS256", typ: "JWT", kid: SIM_ACTIVE_KID },
+        {
+          ...basePayload,
+          iat: expSec - 3600,
+          exp: expSec
+        },
+        "active"
+      );
     }
 
     default:

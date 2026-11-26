@@ -1,14 +1,23 @@
 import { AGENT_TOKEN_MAX_TTL_SECONDS } from "./agentPolicy";
+import { verifyBrowserRs256Jwt } from "./browserCrypto";
 import {
+  decodeJwt,
+  generateLivePkceTelemetry,
   isRecord,
+  parseJwtClaims,
+  saveSession,
+  type ActorClaim,
   type DelegatedAgentSession,
+  type DemoPersona,
   type OidcConfig,
   type ParsedJwtClaims,
+  type PkceTelemetry,
   type TokenSession
 } from "./pkce";
 import {
   assertNever,
   evaluateFaultScenario,
+  mintSimulatedFaultToken,
   type DefenseTrace,
   type FaultState,
   type McpToolSpec
@@ -100,7 +109,11 @@ export interface BackendHealthStatus {
   readonly reachable: boolean;
   readonly statusText: string;
   readonly simulationOnly?: boolean;
+  readonly devIdpEnabled?: boolean;
+  readonly activeKid?: string;
+  readonly rotatedKid?: string;
   readonly issuer?: string;
+  readonly mcpAudience?: string;
   readonly uptimeSeconds?: number;
 }
 
@@ -148,8 +161,17 @@ export async function checkBackendHealth(baseUrl: string): Promise<BackendHealth
     return {
       reachable: raw.status === "ok",
       simulationOnly: raw.status !== "ok",
-      statusText: raw.status === "ok" ? "Express API Online" : "Browser Simulation Mode",
+      statusText:
+        raw.status === "ok"
+          ? raw.devIdpEnabled === true
+            ? "Express API + Dev IdP Online"
+            : "Express API Online"
+          : "Browser Simulation Mode",
+      devIdpEnabled: raw.devIdpEnabled === true,
+      activeKid: typeof raw.activeKid === "string" ? raw.activeKid : undefined,
+      rotatedKid: typeof raw.rotatedKid === "string" ? raw.rotatedKid : undefined,
       issuer: typeof raw.issuer === "string" ? raw.issuer : undefined,
+      mcpAudience: typeof raw.mcpAudience === "string" ? raw.mcpAudience : undefined,
       uptimeSeconds: typeof raw.uptimeSeconds === "number" ? raw.uptimeSeconds : undefined
     };
   } catch {
@@ -197,6 +219,28 @@ export async function invokeProtectedApi(
       data = { raw: await response.text() };
     }
 
+    let defenseTrace: DefenseTrace | undefined;
+    if (isRecord(data) && isRecord(data.defenseTrace)) {
+      const dt = data.defenseTrace;
+      if (
+        typeof dt.layer === "string" &&
+        typeof dt.middleware === "string" &&
+        typeof dt.rfc === "string" &&
+        typeof dt.check === "string" &&
+        typeof dt.details === "string" &&
+        (dt.outcome === "ALLOWED" || dt.outcome === "REJECTED" || dt.outcome === "RECOVERED")
+      ) {
+        defenseTrace = {
+          layer: dt.layer,
+          middleware: dt.middleware,
+          rfc: dt.rfc,
+          check: dt.check,
+          outcome: dt.outcome,
+          details: dt.details
+        };
+      }
+    }
+
     return {
       endpoint,
       method,
@@ -205,6 +249,7 @@ export async function invokeProtectedApi(
       data,
       ok: response.ok,
       mode: "live",
+      defenseTrace,
       timestamp: new Date().toISOString()
     };
   } catch (err: unknown) {
@@ -669,4 +714,346 @@ export function simulateMcpToolCall(
     default:
       return assertNever(toolSpec.name);
   }
+}
+
+export async function exchangeDevIdpPersonaToken(
+  baseUrl: string,
+  role: DemoPersona,
+  config: OidcConfig,
+  pkceTelemetry?: PkceTelemetry | null
+): Promise<TokenSession> {
+  const telemetry = pkceTelemetry ?? (await generateLivePkceTelemetry());
+  const persona = role === "user" ? "developer" : role;
+
+  const authzRes = await fetch(`${baseUrl}/dev-idp/oauth2/authorize`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      persona,
+      code_challenge: telemetry.codeChallenge,
+      code_challenge_method: "S256",
+      state: telemetry.state,
+      client_id: config.clientId || "choreo-spa-public-client",
+      redirect_uri: config.redirectUri
+    })
+  });
+  const authzData: unknown = await authzRes.json();
+  if (!authzRes.ok || !isRecord(authzData) || typeof authzData.code !== "string") {
+    throw new Error("Dev IdP /oauth2/authorize failed to issue authorization code.");
+  }
+
+  const tokenRes = await fetch(`${baseUrl}/dev-idp/oauth2/token`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      grant_type: "authorization_code",
+      code: authzData.code,
+      code_verifier: telemetry.codeVerifier
+    })
+  });
+  const tokenData: unknown = await tokenRes.json();
+  if (!tokenRes.ok || !isRecord(tokenData) || typeof tokenData.access_token !== "string") {
+    throw new Error("Dev IdP /oauth2/token failed to exchange PKCE authorization code.");
+  }
+
+  const session: TokenSession = {
+    accessToken: tokenData.access_token,
+    idToken: typeof tokenData.id_token === "string" ? tokenData.id_token : undefined,
+    tokenType: typeof tokenData.token_type === "string" ? tokenData.token_type : "Bearer",
+    expiresIn: typeof tokenData.expires_in === "number" ? tokenData.expires_in : 3600,
+    issuedAt: Date.now(),
+    mode: "demo",
+    demoRole: role,
+    preset: config.preset,
+    stsMode: "dev-idp"
+  };
+  saveSession(session);
+  return session;
+}
+
+export async function exchangeDevIdpOboToken(
+  baseUrl: string,
+  subjectToken: string,
+  config: OidcConfig,
+  humanClaims: ParsedJwtClaims | null
+): Promise<DelegatedAgentSession> {
+  const res = await fetch(`${baseUrl}/dev-idp/oauth2/token`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      grant_type: "urn:ietf:params:oauth:grant-type:token-exchange",
+      subject_token: subjectToken,
+      actor_token: "agent:choreo-integrator-bot",
+      resource: config.mcpAudience,
+      scope: "orders:read"
+    })
+  });
+  const raw: unknown = await res.json();
+  if (!res.ok || !isRecord(raw) || typeof raw.access_token !== "string") {
+    throw new Error("Dev IdP RFC 8693 token-exchange endpoint rejected subject_token.");
+  }
+
+  const decoded = decodeJwt(raw.access_token);
+  const parsed = decoded ? parseJwtClaims(decoded) : null;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const ttlSeconds =
+    typeof raw.expires_in === "number" ? raw.expires_in : AGENT_TOKEN_MAX_TTL_SECONDS;
+  const issuedAtSec =
+    typeof raw.issued_at === "number" ? raw.issued_at : (parsed?.issuedAtSec ?? nowSec);
+  const expiresAtSec =
+    typeof raw.expires_at === "number"
+      ? raw.expires_at
+      : (parsed?.expiresAtSec ?? issuedAtSec + ttlSeconds);
+
+  const actor: ActorClaim = parsed?.actor ?? {
+    sub: "agent:choreo-integrator-bot",
+    client_id: "choreo-mcp-agent-v1",
+    delegation_protocol: "urn:ietf:params:oauth:grant-type:token-exchange"
+  };
+
+  return {
+    accessToken: raw.access_token,
+    humanSubject: parsed?.sub ?? humanClaims?.sub ?? "usr_4b21d90e_dev",
+    humanUsername:
+      parsed?.username ?? humanClaims?.username ?? "developer@acme-identity.example",
+    actor,
+    audience:
+      typeof raw.audience === "string" ? raw.audience : config.mcpAudience,
+    grantedScopes: parsed?.scopes.length ? parsed.scopes : ["orders:read"],
+    originalScopes: parsed?.originalScopes.length
+      ? parsed.originalScopes
+      : (humanClaims?.scopes ?? ["openid", "profile", "orders:read"]),
+    strippedScopes: parsed?.strippedScopes.length
+      ? parsed.strippedScopes
+      : ["admin:write", "refunds:execute"],
+    ttlSeconds,
+    issuedAtSec,
+    expiresAtSec,
+    preset: config.preset,
+    stsMode: "dev-idp"
+  };
+}
+
+export async function requestDevIdpFaultToken(
+  baseUrl: string,
+  fault: FaultState,
+  targetAudience: string,
+  role?: DemoPersona
+): Promise<string | null> {
+  if (
+    fault.id === "none" ||
+    fault.id === "pkce_verifier_mismatch" ||
+    fault.id === "csrf_state_mismatch"
+  ) {
+    return null;
+  }
+  const res = await fetch(`${baseUrl}/dev-idp/admin/mint-fault-token`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      fault,
+      targetAudience,
+      persona: role === "user" ? "developer" : (role ?? "admin")
+    })
+  });
+  const data: unknown = await res.json();
+  if (!res.ok || !isRecord(data) || typeof data.token !== "string") {
+    return null;
+  }
+  return data.token;
+}
+
+export async function probeDevIdpPkceMismatch(
+  baseUrl: string,
+  pkceTelemetry: PkceTelemetry | null
+): Promise<ApiCallResult> {
+  const telemetry = pkceTelemetry ?? (await generateLivePkceTelemetry());
+  const authzRes = await fetch(`${baseUrl}/dev-idp/oauth2/authorize`, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      persona: "developer",
+      code_challenge: telemetry.codeChallenge,
+      code_challenge_method: "S256"
+    })
+  });
+  const authzData: unknown = await authzRes.json();
+  const code =
+    isRecord(authzData) && typeof authzData.code === "string"
+      ? authzData.code
+      : "authz_code_invalid";
+
+  const tamperedVerifier =
+    telemetry.tamperedCodeVerifier ?? `${telemetry.codeVerifier.slice(0, -8)}TAMPERED`;
+  return invokeProtectedApi(
+    baseUrl,
+    "/dev-idp/oauth2/token",
+    "POST",
+    undefined,
+    {
+      grant_type: "authorization_code",
+      code,
+      code_verifier: tamperedVerifier
+    }
+  );
+}
+
+/**
+ * Cryptographically verifies the token via Web Crypto RSASSA-PKCS1-v1_5 in Browser Simulation Mode
+ * before evaluating RBAC endpoint policy.
+ */
+export async function simulateVerifiedRbacPolicyCall(
+  spec: ApiEndpointSpec,
+  config: OidcConfig,
+  session: TokenSession | null,
+  claims: ParsedJwtClaims | null,
+  activeFault?: FaultState,
+  pkceTelemetry?: PkceTelemetry | null
+): Promise<ApiCallResult> {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const nowIso = new Date(nowSec * 1000).toISOString();
+
+  if (spec.policyKind === "public") {
+    return simulateRbacPolicyCall(spec, config, session, claims, activeFault);
+  }
+
+  if (
+    activeFault &&
+    (activeFault.id === "pkce_verifier_mismatch" || activeFault.id === "csrf_state_mismatch")
+  ) {
+    return simulateRbacPolicyCall(spec, config, session, claims, activeFault);
+  }
+
+  const faultToken =
+    activeFault && activeFault.id !== "none"
+      ? await mintSimulatedFaultToken(activeFault, {
+          config,
+          claims,
+          pkceTelemetry: pkceTelemetry ?? null,
+          nowSec,
+          targetAudience: config.audience
+        })
+      : null;
+
+  const tokenToVerify = faultToken ?? session?.accessToken ?? null;
+  if (!tokenToVerify) {
+    return simulateRbacPolicyCall(spec, config, null, null);
+  }
+
+  const verified = await verifyBrowserRs256Jwt(tokenToVerify, {
+    expectedIssuer: config.issuer,
+    expectedAudience: config.audience,
+    nowSec
+  });
+
+  if (!verified.ok) {
+    return {
+      endpoint: spec.path,
+      method: spec.method,
+      status: verified.status,
+      latencyMs: 3,
+      ok: false,
+      mode: "dry-run",
+      defenseTrace: verified.defenseTrace,
+      timestamp: nowIso,
+      data: {
+        error: verified.errorCode,
+        status: verified.status,
+        message: verified.message,
+        defenseTrace: verified.defenseTrace,
+        policyEvaluation: "SIMULATED_STS_WEB_CRYPTO_RS256"
+      }
+    };
+  }
+
+  const verifiedDecoded = decodeJwt(tokenToVerify);
+  const verifiedClaims = verifiedDecoded ? parseJwtClaims(verifiedDecoded) : claims;
+  const rbacResult = simulateRbacPolicyCall(spec, config, session, verifiedClaims);
+
+  if (verified.recoveredRotatedKey && rbacResult.ok) {
+    return {
+      ...rbacResult,
+      defenseTrace: verified.defenseTrace
+    };
+  }
+  return rbacResult;
+}
+
+/**
+ * Cryptographically verifies the delegated agent token via Web Crypto RSASSA-PKCS1-v1_5
+ * in Browser Simulation Mode before evaluating MCP tool policies.
+ */
+export async function simulateVerifiedMcpToolCall(
+  toolSpec: McpToolSpec,
+  delegatedSession: DelegatedAgentSession,
+  config: OidcConfig,
+  activeFault?: FaultState,
+  pkceTelemetry?: PkceTelemetry | null,
+  nowSecOverride?: number
+): Promise<ApiCallResult> {
+  const nowSec = nowSecOverride ?? Math.floor(Date.now() / 1000);
+  const nowIso = new Date(nowSec * 1000).toISOString();
+  const endpoint = "/api/mcp/tools/call";
+
+  if (
+    activeFault &&
+    (activeFault.id === "pkce_verifier_mismatch" || activeFault.id === "csrf_state_mismatch")
+  ) {
+    return simulateMcpToolCall(toolSpec, delegatedSession, config, activeFault, nowSec);
+  }
+
+  const faultToken =
+    activeFault && activeFault.id !== "none"
+      ? await mintSimulatedFaultToken(activeFault, {
+          config,
+          claims: null,
+          pkceTelemetry: pkceTelemetry ?? null,
+          nowSec,
+          targetAudience: config.mcpAudience
+        })
+      : null;
+
+  const tokenToVerify = faultToken ?? delegatedSession.accessToken;
+  const verified = await verifyBrowserRs256Jwt(tokenToVerify, {
+    expectedIssuer: config.issuer,
+    expectedAudience: config.mcpAudience,
+    nowSec
+  });
+
+  if (!verified.ok) {
+    return {
+      endpoint,
+      method: "POST",
+      status: verified.status,
+      latencyMs: 3,
+      ok: false,
+      mode: "dry-run",
+      defenseTrace: verified.defenseTrace,
+      timestamp: nowIso,
+      data: {
+        error: verified.errorCode,
+        tool: toolSpec.name,
+        message: verified.message,
+        defenseTrace: verified.defenseTrace,
+        policyEvaluation: "SIMULATED_STS_WEB_CRYPTO_RS256"
+      }
+    };
+  }
+
+  return simulateMcpToolCall(toolSpec, delegatedSession, config, undefined, nowSec);
 }
