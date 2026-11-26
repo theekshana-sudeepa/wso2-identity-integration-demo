@@ -2,17 +2,20 @@ import cors from "cors";
 import express, { type ErrorRequestHandler, type Express, type RequestHandler } from "express";
 import helmet from "helmet";
 import identityConfig from "./config/identityConfig.js";
-import { authenticateToken } from "./middleware/authMiddleware.js";
+import { authenticateToken, createAuthMiddleware } from "./middleware/authMiddleware.js";
 import { createApiRouter } from "./routes/apiRoutes.js";
 import { createMcpRouter } from "./routes/mcpRoutes.js";
 
 export interface CreateAppOptions {
   readonly authMiddleware?: RequestHandler;
+  readonly mcpAuthMiddleware?: RequestHandler;
 }
 
 export function createApp(options?: CreateAppOptions): Express {
   const app = express();
   const authMiddleware = options?.authMiddleware ?? authenticateToken;
+  const mcpAuthMiddleware =
+    options?.mcpAuthMiddleware ?? createAuthMiddleware({ audience: identityConfig.mcpAudience });
 
   app.use(helmet());
   app.use(
@@ -25,7 +28,8 @@ export function createApp(options?: CreateAppOptions): Express {
         callback(new Error(`Origin ${origin} is not allowed by CORS policy.`));
       },
       methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowedHeaders: ["Authorization", "Content-Type"]
+      allowedHeaders: ["Authorization", "Content-Type"],
+      exposedHeaders: ["WWW-Authenticate"]
     })
   );
   app.use(express.json({ limit: "1mb" }));
@@ -35,6 +39,8 @@ export function createApp(options?: CreateAppOptions): Express {
       status: "ok",
       environment: identityConfig.nodeEnv,
       issuer: identityConfig.issuer,
+      audience: identityConfig.audience,
+      mcpAudience: identityConfig.mcpAudience,
       jwksUri: identityConfig.jwksUri,
       mcpToolsEndpoint: "/api/mcp/tools/call",
       uptimeSeconds: Math.round(process.uptime())
@@ -42,7 +48,7 @@ export function createApp(options?: CreateAppOptions): Express {
   });
 
   app.use("/api/v1", createApiRouter(authMiddleware));
-  app.use("/api/mcp", createMcpRouter(authMiddleware));
+  app.use("/api/mcp", createMcpRouter(mcpAuthMiddleware));
 
   app.use((_req, res) => {
     res.status(404).json({

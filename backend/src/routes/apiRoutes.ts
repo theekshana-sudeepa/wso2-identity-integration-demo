@@ -1,6 +1,7 @@
 import express, { type RequestHandler, type Router } from "express";
 import identityConfig from "../config/identityConfig.js";
 import { authenticateToken } from "../middleware/authMiddleware.js";
+import { sendBearerError } from "../middleware/bearerChallenge.js";
 import { requireRoles, requireScopes } from "../middleware/rbacMiddleware.js";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -38,7 +39,7 @@ export function createApiRouter(authMiddleware: RequestHandler = authenticateTok
   router.get("/user/profile", authMiddleware, (req, res) => {
     const user = req.user;
     if (!user) {
-      res.status(401).json({ error: "unauthorized", message: "Missing user context." });
+      sendBearerError(res, 401, null, { error: "unauthorized", message: "Missing user context." });
       return;
     }
 
@@ -59,7 +60,7 @@ export function createApiRouter(authMiddleware: RequestHandler = authenticateTok
   router.get("/user/roles", authMiddleware, (req, res) => {
     const user = req.user;
     if (!user) {
-      res.status(401).json({ error: "unauthorized", message: "Missing user context." });
+      sendBearerError(res, 401, null, { error: "unauthorized", message: "Missing user context." });
       return;
     }
 
@@ -78,7 +79,7 @@ export function createApiRouter(authMiddleware: RequestHandler = authenticateTok
     (req, res) => {
       const user = req.user;
       if (!user) {
-        res.status(401).json({ error: "unauthorized", message: "Missing user context." });
+        sendBearerError(res, 401, null, { error: "unauthorized", message: "Missing user context." });
         return;
       }
 
@@ -119,7 +120,7 @@ export function createApiRouter(authMiddleware: RequestHandler = authenticateTok
     (req, res) => {
       const user = req.user;
       if (!user) {
-        res.status(401).json({ error: "unauthorized", message: "Missing user context." });
+        sendBearerError(res, 401, null, { error: "unauthorized", message: "Missing user context." });
         return;
       }
 
