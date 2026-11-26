@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
 import { Bot, Command, Moon, ShieldCheck, Sun, UserCheck } from "lucide-react";
 import { ApiTestBench } from "./components/ApiTestBench";
 import { AuthSessionCard } from "./components/AuthSessionCard";
@@ -23,10 +23,7 @@ import {
   submitCibaApprovalDecision,
   type ApiCallResult,
   type ApiEndpointSpec,
-  type BackendHealthStatus,
   type ExecutionMode,
-  type McpAuditEntry,
-  type PendingCibaRequest,
   type VerificationMode
 } from "./lib/apiClient";
 import { createBrowserDpopProof } from "./lib/browserCrypto";
@@ -38,17 +35,14 @@ import {
   createSimulatedStsDemoSession,
   decodeJwt,
   generateLivePkceTelemetry,
-  getInitialPreset,
   getOidcConfig,
   handleOidcCallback,
   initiateWso2Login,
   isRecord,
-  loadSession,
   parseJwtClaims,
   type DelegatedAgentSession,
   type DemoPersona,
   type IdpPreset,
-  type PkceTelemetry,
   type TokenSession
 } from "./lib/pkce";
 import {
@@ -58,69 +52,58 @@ import {
   type FaultState,
   type FlowMode,
   type FlowStageId,
-  type McpToolName,
   type McpToolSpec
 } from "./lib/securityLab";
-
-type ThemeMode = "dark" | "light";
-const THEME_STORAGE_KEY = "wso2_console_theme";
-
-function getInitialTheme(): ThemeMode {
-  try {
-    const saved = localStorage.getItem(THEME_STORAGE_KEY);
-    if (saved === "light" || saved === "dark") {
-      return saved;
-    }
-  } catch {
-    // Ignore storage access errors in restricted environments
-  }
-  return "dark";
-}
+import {
+  ConsoleContext,
+  consoleReducer,
+  createInitialConsoleState,
+  THEME_STORAGE_KEY
+} from "./state/consoleReducer";
 
 export function App() {
-  const [theme, setTheme] = useState<ThemeMode>(getInitialTheme);
-  const [preset, setPreset] = useState<IdpPreset>(
-    () => loadSession()?.preset ?? getInitialPreset()
+  const [state, dispatch] = useReducer(
+    consoleReducer,
+    undefined,
+    createInitialConsoleState
   );
+  const {
+    theme,
+    preset,
+    flowMode,
+    selectedStage,
+    activeFault,
+    attackLabOpen,
+    session,
+    authError,
+    pkceTelemetry,
+    executionMode,
+    apiResult,
+    lastMcpResult,
+    loadingEndpoint,
+    mcpLoadingTool,
+    backendHealth,
+    delegatedSession,
+    mcpAuditEntries,
+    pendingCibaRequest,
+    verificationMode,
+    tokenRevoked,
+    paletteOpen,
+    exporterOpen,
+    toastMessage
+  } = state;
+
   const config = useMemo(() => getOidcConfig(preset), [preset]);
-
-  const [flowMode, setFlowMode] = useState<FlowMode>("human");
-  const [selectedStage, setSelectedStage] = useState<FlowStageId>("pkce");
-  const [activeFault, setActiveFault] = useState<FaultState>({ id: "none" });
-  const [attackLabOpen, setAttackLabOpen] = useState(false);
-
-  const [session, setSession] = useState<TokenSession | null>(() => loadSession());
-  const [authError, setAuthError] = useState<string | null>(null);
-  const [pkceTelemetry, setPkceTelemetry] = useState<PkceTelemetry | null>(null);
-  const [executionMode, setExecutionMode] = useState<ExecutionMode>("live");
   const userSelectedModeRef = useRef(false);
-
-  const [apiResult, setApiResult] = useState<ApiCallResult | null>(null);
-  const [lastMcpResult, setLastMcpResult] = useState<ApiCallResult | null>(null);
-  const [loadingEndpoint, setLoadingEndpoint] = useState<string | null>(null);
-  const [mcpLoadingTool, setMcpLoadingTool] = useState<McpToolName | null>(null);
-  const [backendHealth, setBackendHealth] = useState<BackendHealthStatus>({
-    reachable: false,
-    statusText: "Checking API..."
-  });
-
-  const [delegatedSession, setDelegatedSession] = useState<DelegatedAgentSession | null>(null);
-  const [mcpAuditEntries, setMcpAuditEntries] = useState<readonly McpAuditEntry[]>([]);
-  const [pendingCibaRequest, setPendingCibaRequest] = useState<PendingCibaRequest | null>(null);
-  const [verificationMode, setVerificationMode] = useState<VerificationMode>("jwks");
-  const [tokenRevoked, setTokenRevoked] = useState(false);
-  const [paletteOpen, setPaletteOpen] = useState(false);
-  const [exporterOpen, setExporterOpen] = useState(false);
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimerRef = useRef<number | null>(null);
 
   const showToast = useCallback((message: string) => {
-    setToastMessage(message);
+    dispatch({ type: "SET_TOAST_MESSAGE", message });
     if (toastTimerRef.current !== null) {
       window.clearTimeout(toastTimerRef.current);
     }
     toastTimerRef.current = window.setTimeout(() => {
-      setToastMessage(null);
+      dispatch({ type: "SET_TOAST_MESSAGE", message: null });
       toastTimerRef.current = null;
     }, 2400);
   }, []);
@@ -146,9 +129,9 @@ export function App() {
     const onGlobalKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
         e.preventDefault();
-        setPaletteOpen((prev) => !prev);
+        dispatch({ type: "TOGGLE_PALETTE" });
       } else if (e.key === "Escape") {
-        setExporterOpen(false);
+        dispatch({ type: "SET_EXPORTER_OPEN", open: false });
       }
     };
     window.addEventListener("keydown", onGlobalKeyDown);
@@ -157,14 +140,16 @@ export function App() {
 
   const regeneratePkce = useCallback(async () => {
     const fresh = await generateLivePkceTelemetry();
-    setPkceTelemetry(fresh);
+    dispatch({ type: "SET_PKCE_TELEMETRY", telemetry: fresh });
   }, []);
 
   useEffect(() => {
     let active = true;
     generateLivePkceTelemetry()
       .then((fresh) => {
-        if (active) setPkceTelemetry(fresh);
+        if (active) {
+          dispatch({ type: "SET_PKCE_TELEMETRY", telemetry: fresh });
+        }
       })
       .catch(() => {
         // Web Crypto fallback ignored if unavailable
@@ -179,9 +164,9 @@ export function App() {
     let active = true;
     checkBackendHealth(config.backendApiUrl).then((status) => {
       if (active) {
-        setBackendHealth(status);
+        dispatch({ type: "SET_BACKEND_HEALTH", health: status });
         if (!status.reachable && !userSelectedModeRef.current) {
-          setExecutionMode("dry-run");
+          dispatch({ type: "SET_EXECUTION_MODE", mode: "dry-run" });
         }
       }
     });
@@ -195,13 +180,16 @@ export function App() {
     handleOidcCallback(config)
       .then((newSession) => {
         if (active && newSession) {
-          setSession(newSession);
-          setAuthError(null);
+          dispatch({ type: "SET_SESSION", session: newSession });
+          dispatch({ type: "SET_AUTH_ERROR", error: null });
         }
       })
       .catch((err: unknown) => {
         if (active) {
-          setAuthError(err instanceof Error ? err.message : "Failed to complete OIDC callback.");
+          dispatch({
+            type: "SET_AUTH_ERROR",
+            error: err instanceof Error ? err.message : "Failed to complete OIDC callback."
+          });
         }
       });
 
@@ -210,21 +198,19 @@ export function App() {
     };
   }, [config]);
 
-  const decoded = useMemo(() => {
-    return session ? decodeJwt(session.accessToken) : null;
-  }, [session]);
-
-  const claims = useMemo(() => {
-    return decoded ? parseJwtClaims(decoded) : null;
-  }, [decoded]);
-
-  const delegatedDecoded = useMemo(() => {
-    return delegatedSession ? decodeJwt(delegatedSession.accessToken) : null;
-  }, [delegatedSession]);
-
-  const delegatedClaims = useMemo(() => {
-    return delegatedDecoded ? parseJwtClaims(delegatedDecoded) : null;
-  }, [delegatedDecoded]);
+  const decoded = useMemo(
+    () => (session ? decodeJwt(session.accessToken) : null),
+    [session]
+  );
+  const claims = useMemo(() => (decoded ? parseJwtClaims(decoded) : null), [decoded]);
+  const delegatedDecoded = useMemo(
+    () => (delegatedSession ? decodeJwt(delegatedSession.accessToken) : null),
+    [delegatedSession]
+  );
+  const delegatedClaims = useMemo(
+    () => (delegatedDecoded ? parseJwtClaims(delegatedDecoded) : null),
+    [delegatedDecoded]
+  );
 
   const faultEval = useMemo(
     () =>
@@ -236,14 +222,22 @@ export function App() {
     [activeFault, config, claims, pkceTelemetry]
   );
 
+  const setSelectedStage = useCallback((stage: FlowStageId) => {
+    dispatch({ type: "SET_SELECTED_STAGE", stage });
+  }, []);
+
+  const setVerificationMode = useCallback((mode: VerificationMode) => {
+    dispatch({ type: "SET_VERIFICATION_MODE", mode });
+  }, []);
+
   const handleChangeMode = useCallback((nextMode: ExecutionMode) => {
     userSelectedModeRef.current = true;
-    setExecutionMode(nextMode);
+    dispatch({ type: "SET_EXECUTION_MODE", mode: nextMode });
   }, []);
 
   const handleSwitchFlowMode = useCallback(
     async (nextFlowMode: FlowMode) => {
-      setFlowMode(nextFlowMode);
+      dispatch({ type: "SET_FLOW_MODE", flowMode: nextFlowMode });
       if (nextFlowMode === "agent") {
         let activeSession = session;
         let activeHumanClaims = claims;
@@ -266,7 +260,7 @@ export function App() {
           } catch {
             activeSession = createDemoSession(role, config);
           }
-          setSession(activeSession);
+          dispatch({ type: "SET_SESSION", session: activeSession });
           const dec = decodeJwt(activeSession.accessToken);
           activeHumanClaims = dec ? parseJwtClaims(dec) : null;
         }
@@ -280,13 +274,13 @@ export function App() {
                 activeHumanClaims
               )
             : await createSimulatedStsDelegatedSession(activeHumanClaims, config);
-          setDelegatedSession(obo);
+          dispatch({ type: "SET_DELEGATED_SESSION", session: obo });
         } catch {
-          setDelegatedSession(createDelegatedAgentSession(activeHumanClaims, config));
+          dispatch({
+            type: "SET_DELEGATED_SESSION",
+            session: createDelegatedAgentSession(activeHumanClaims, config)
+          });
         }
-        setSelectedStage("agent_mcp");
-      } else {
-        setSelectedStage((current) => (current === "agent_mcp" ? "rbac" : current));
       }
     },
     [
@@ -315,7 +309,7 @@ export function App() {
           config,
           pkceTelemetry
         );
-        setSession(activeSession);
+        dispatch({ type: "SET_SESSION", session: activeSession });
         const dec = decodeJwt(activeSession.accessToken);
         activeClaims = dec ? parseJwtClaims(dec) : null;
       }
@@ -329,7 +323,7 @@ export function App() {
               activeClaims
             )
           : await createSimulatedStsDelegatedSession(activeClaims, config);
-      setDelegatedSession(fresh);
+      dispatch({ type: "SET_DELEGATED_SESSION", session: fresh });
       showToast(
         useLiveDevIdp
           ? "Exchanged fresh 60s RFC 8693 OBO token via Local Dev IdP STS"
@@ -337,7 +331,7 @@ export function App() {
       );
     } catch {
       const fallback = createDelegatedAgentSession(claims, config);
-      setDelegatedSession(fallback);
+      dispatch({ type: "SET_DELEGATED_SESSION", session: fallback });
       showToast("Minted fresh 60s RFC 8693 OBO delegated agent token");
     }
   }, [
@@ -351,53 +345,62 @@ export function App() {
     showToast
   ]);
 
-  const handleChangeFault = useCallback((nextFault: FaultState) => {
-    setActiveFault(nextFault);
-    if (nextFault.id !== "none") {
-      const preview = evaluateFaultScenario(nextFault, {
-        config,
-        claims,
-        pkceTelemetry
-      });
-      if (preview.failingStage) {
-        setSelectedStage(preview.failingStage);
+  const handleChangeFault = useCallback(
+    (nextFault: FaultState) => {
+      dispatch({ type: "SET_ACTIVE_FAULT", fault: nextFault });
+      if (nextFault.id !== "none") {
+        const preview = evaluateFaultScenario(nextFault, {
+          config,
+          claims,
+          pkceTelemetry
+        });
+        if (preview.failingStage) {
+          dispatch({ type: "SET_SELECTED_STAGE", stage: preview.failingStage });
+        }
       }
-    }
-  }, [config, claims, pkceTelemetry]);
+    },
+    [config, claims, pkceTelemetry]
+  );
 
   const handleSelectPreset = useCallback(
     (nextPreset: IdpPreset) => {
-      setPreset(nextPreset);
-      setAuthError(null);
+      dispatch({ type: "SET_PRESET", preset: nextPreset });
       const nextCfg = getOidcConfig(nextPreset);
       if (session?.mode === "demo" && session.demoRole) {
         const refreshed = createDemoSession(session.demoRole, nextCfg);
-        setSession(refreshed);
+        dispatch({ type: "SET_SESSION", session: refreshed });
         if (flowMode === "agent") {
           const dec = decodeJwt(refreshed.accessToken);
-          setDelegatedSession(
-            createDelegatedAgentSession(dec ? parseJwtClaims(dec) : null, nextCfg)
-          );
+          dispatch({
+            type: "SET_DELEGATED_SESSION",
+            session: createDelegatedAgentSession(dec ? parseJwtClaims(dec) : null, nextCfg)
+          });
         }
       } else if (flowMode === "agent") {
-        setDelegatedSession(createDelegatedAgentSession(claims, nextCfg));
+        dispatch({
+          type: "SET_DELEGATED_SESSION",
+          session: createDelegatedAgentSession(claims, nextCfg)
+        });
       }
     },
     [claims, flowMode, session]
   );
 
   const onLiveLogin = useCallback(async () => {
-    setAuthError(null);
+    dispatch({ type: "SET_AUTH_ERROR", error: null });
     try {
       await initiateWso2Login(config);
     } catch (err: unknown) {
-      setAuthError(err instanceof Error ? err.message : "Unable to initiate OIDC login.");
+      dispatch({
+        type: "SET_AUTH_ERROR",
+        error: err instanceof Error ? err.message : "Unable to initiate OIDC login."
+      });
     }
   }, [config]);
 
   const onDemoLogin = useCallback(
     async (role: DemoPersona) => {
-      setAuthError(null);
+      dispatch({ type: "SET_AUTH_ERROR", error: null });
       const useLiveDevIdp =
         executionMode === "live" &&
         backendHealth.reachable &&
@@ -415,9 +418,9 @@ export function App() {
       } catch {
         demoSession = createDemoSession(role, config);
       }
-      setSession(demoSession);
-      setTokenRevoked(false);
-      setPendingCibaRequest(null);
+      dispatch({ type: "SET_SESSION", session: demoSession });
+      dispatch({ type: "SET_TOKEN_REVOKED", revoked: false });
+      dispatch({ type: "SET_PENDING_CIBA_REQUEST", request: null });
 
       const dec = decodeJwt(demoSession.accessToken);
       const parsedClaims = dec ? parseJwtClaims(dec) : null;
@@ -431,9 +434,12 @@ export function App() {
                 parsedClaims
               )
             : await createSimulatedStsDelegatedSession(parsedClaims, config);
-          setDelegatedSession(obo);
+          dispatch({ type: "SET_DELEGATED_SESSION", session: obo });
         } catch {
-          setDelegatedSession(createDelegatedAgentSession(parsedClaims, config));
+          dispatch({
+            type: "SET_DELEGATED_SESSION",
+            session: createDelegatedAgentSession(parsedClaims, config)
+          });
         }
       }
       const roleLabel =
@@ -457,13 +463,7 @@ export function App() {
 
   const onLogout = useCallback(() => {
     clearSession();
-    setSession(null);
-    setDelegatedSession(null);
-    setPendingCibaRequest(null);
-    setTokenRevoked(false);
-    setApiResult(null);
-    setLastMcpResult(null);
-    setAuthError(null);
+    dispatch({ type: "LOGOUT_SESSION" });
     showToast("Cleared active OIDC session");
   }, [showToast]);
 
@@ -477,10 +477,10 @@ export function App() {
       activeSession = useLiveDevIdp
         ? await exchangeDevIdpPersonaToken(config.backendApiUrl, "user", config, pkceTelemetry)
         : await createSimulatedStsDemoSession("user", config);
-      setSession(activeSession);
+      dispatch({ type: "SET_SESSION", session: activeSession });
     }
     await revokeActiveToken(config.backendApiUrl, activeSession.accessToken, useLiveDevIdp);
-    setTokenRevoked(true);
+    dispatch({ type: "SET_TOKEN_REVOKED", revoked: true });
     showToast(
       "Token revoked via RFC 7009 — test Stateless JWKS (200) vs RFC 7662 Introspection (401)"
     );
@@ -496,7 +496,7 @@ export function App() {
 
   const handleInvokeEndpoint = useCallback(
     async (spec: ApiEndpointSpec) => {
-      setLoadingEndpoint(spec.path);
+      dispatch({ type: "SET_LOADING_ENDPOINT", endpoint: spec.path });
       try {
         const shouldSimulate = executionMode === "dry-run" || !backendHealth.reachable;
         if (shouldSimulate) {
@@ -510,7 +510,7 @@ export function App() {
               activeSession.demoRole ?? "user",
               config
             );
-            setSession(activeSession);
+            dispatch({ type: "SET_SESSION", session: activeSession });
             const dec = decodeJwt(activeSession.accessToken);
             activeClaims = dec ? parseJwtClaims(dec) : null;
           }
@@ -523,14 +523,14 @@ export function App() {
             pkceTelemetry,
             verificationMode
           );
-          setApiResult(simulated);
+          dispatch({ type: "SET_API_RESULT", result: simulated });
         } else {
           if (activeFault.id === "pkce_verifier_mismatch" && backendHealth.devIdpEnabled) {
             const pkceMismatchResult = await probeDevIdpPkceMismatch(
               config.backendApiUrl,
               pkceTelemetry
             );
-            setApiResult(pkceMismatchResult);
+            dispatch({ type: "SET_API_RESULT", result: pkceMismatchResult });
             return;
           }
           if (activeFault.id === "csrf_state_mismatch") {
@@ -541,7 +541,7 @@ export function App() {
               claims,
               activeFault
             );
-            setApiResult(csrfAborted);
+            dispatch({ type: "SET_API_RESULT", result: csrfAborted });
             return;
           }
 
@@ -557,7 +557,7 @@ export function App() {
               config,
               pkceTelemetry
             );
-            setSession(activeSession);
+            dispatch({ type: "SET_SESSION", session: activeSession });
           }
 
           if (
@@ -570,7 +570,7 @@ export function App() {
               activeSession.accessToken,
               config.mcpAudience
             );
-            setApiResult(mayActRes);
+            dispatch({ type: "SET_API_RESULT", result: mayActRes });
             return;
           }
 
@@ -595,10 +595,10 @@ export function App() {
             spec.defaultBody,
             { "X-Verification-Mode": verificationMode }
           );
-          setApiResult(liveResult);
+          dispatch({ type: "SET_API_RESULT", result: liveResult });
         }
       } finally {
-        setLoadingEndpoint(null);
+        dispatch({ type: "SET_LOADING_ENDPOINT", endpoint: null });
       }
     },
     [
@@ -632,13 +632,16 @@ export function App() {
             : `Approve high-risk tool "export_all_users" (users:export) requested by ${activeObo.actor.sub}`;
         const expiresIn =
           typeof dataObj.expires_in === "number" ? dataObj.expires_in : 120;
-        setPendingCibaRequest({
-          authReqId,
-          bindingMessage,
-          tool: "export_all_users",
-          actorSub: activeObo.actor.sub,
-          sub: activeObo.humanSubject,
-          expiresIn
+        dispatch({
+          type: "SET_PENDING_CIBA_REQUEST",
+          request: {
+            authReqId,
+            bindingMessage,
+            tool: "export_all_users",
+            actorSub: activeObo.actor.sub,
+            sub: activeObo.humanSubject,
+            expiresIn
+          }
         });
       }
     },
@@ -647,7 +650,7 @@ export function App() {
 
   const handleInvokeMcpTool = useCallback(
     async (toolSpec: McpToolSpec) => {
-      setMcpLoadingTool(toolSpec.name);
+      dispatch({ type: "SET_MCP_LOADING_TOOL", tool: toolSpec.name });
       try {
         const shouldSimulate = executionMode === "dry-run" || !backendHealth.reachable;
         if (shouldSimulate) {
@@ -657,7 +660,7 @@ export function App() {
             activeObo.accessToken.endsWith("demo_obo_rfc8693_rs256_signature")
           ) {
             activeObo = await createSimulatedStsDelegatedSession(claims, config);
-            setDelegatedSession(activeObo);
+            dispatch({ type: "SET_DELEGATED_SESSION", session: activeObo });
           }
           const simulated = await simulateVerifiedMcpToolCall(
             toolSpec,
@@ -666,9 +669,9 @@ export function App() {
             activeFault,
             pkceTelemetry
           );
-          setLastMcpResult(simulated);
-          setApiResult(simulated);
-          setMcpAuditEntries(getSimulatedMcpAuditLog());
+          dispatch({ type: "SET_LAST_MCP_RESULT", result: simulated });
+          dispatch({ type: "SET_API_RESULT", result: simulated });
+          dispatch({ type: "SET_MCP_AUDIT_ENTRIES", entries: getSimulatedMcpAuditLog() });
           extractPendingCibaFromResult(simulated, activeObo);
         } else {
           if (activeFault.id === "pkce_verifier_mismatch" && backendHealth.devIdpEnabled) {
@@ -676,9 +679,9 @@ export function App() {
               config.backendApiUrl,
               pkceTelemetry
             );
-            setLastMcpResult(pkceMismatchResult);
-            setApiResult(pkceMismatchResult);
-            setSelectedStage("agent_mcp");
+            dispatch({ type: "SET_LAST_MCP_RESULT", result: pkceMismatchResult });
+            dispatch({ type: "SET_API_RESULT", result: pkceMismatchResult });
+            dispatch({ type: "SET_SELECTED_STAGE", stage: "agent_mcp" });
             return;
           }
 
@@ -694,7 +697,7 @@ export function App() {
               config,
               pkceTelemetry
             );
-            setSession(activeSession);
+            dispatch({ type: "SET_SESSION", session: activeSession });
             const dec = decodeJwt(activeSession.accessToken);
             activeClaims = dec ? parseJwtClaims(dec) : null;
           }
@@ -709,9 +712,9 @@ export function App() {
               activeSession.accessToken,
               config.mcpAudience
             );
-            setLastMcpResult(mayActRes);
-            setApiResult(mayActRes);
-            setSelectedStage("agent_mcp");
+            dispatch({ type: "SET_LAST_MCP_RESULT", result: mayActRes });
+            dispatch({ type: "SET_API_RESULT", result: mayActRes });
+            dispatch({ type: "SET_SELECTED_STAGE", stage: "agent_mcp" });
             return;
           }
 
@@ -727,10 +730,10 @@ export function App() {
               config,
               activeClaims
             );
-            setDelegatedSession(activeObo);
+            dispatch({ type: "SET_DELEGATED_SESSION", session: activeObo });
           } else if (!activeObo) {
             activeObo = await createSimulatedStsDelegatedSession(activeClaims, config);
-            setDelegatedSession(activeObo);
+            dispatch({ type: "SET_DELEGATED_SESSION", session: activeObo });
           }
 
           let tokenToSend = activeObo.accessToken;
@@ -772,15 +775,15 @@ export function App() {
             },
             extraHeaders
           );
-          setLastMcpResult(liveResult);
-          setApiResult(liveResult);
+          dispatch({ type: "SET_LAST_MCP_RESULT", result: liveResult });
+          dispatch({ type: "SET_API_RESULT", result: liveResult });
           const freshAudit = await fetchMcpAuditLog(config.backendApiUrl);
-          setMcpAuditEntries(freshAudit);
+          dispatch({ type: "SET_MCP_AUDIT_ENTRIES", entries: freshAudit });
           extractPendingCibaFromResult(liveResult, activeObo);
         }
-        setSelectedStage("agent_mcp");
+        dispatch({ type: "SET_SELECTED_STAGE", stage: "agent_mcp" });
       } finally {
-        setMcpLoadingTool(null);
+        dispatch({ type: "SET_MCP_LOADING_TOOL", tool: null });
       }
     },
     [
@@ -804,7 +807,7 @@ export function App() {
         return;
       }
       const reqId = pendingCibaRequest.authReqId;
-      setPendingCibaRequest(null);
+      dispatch({ type: "SET_PENDING_CIBA_REQUEST", request: null });
 
       const useLiveDevIdp =
         executionMode === "live" &&
@@ -826,7 +829,7 @@ export function App() {
       }
 
       const stepUpObo = outcome.updatedSession;
-      setDelegatedSession(stepUpObo);
+      dispatch({ type: "SET_DELEGATED_SESSION", session: stepUpObo });
       showToast("CIBA Step-Up Approved — Retrying export_all_users with one-time consent");
 
       const exportToolSpec: McpToolSpec = {
@@ -839,7 +842,7 @@ export function App() {
         sampleArguments: { format: "csv", includePii: true }
       };
 
-      setMcpLoadingTool("export_all_users");
+      dispatch({ type: "SET_MCP_LOADING_TOOL", tool: "export_all_users" });
       try {
         if (!useLiveDevIdp) {
           const simulated = await simulateVerifiedMcpToolCall(
@@ -849,9 +852,9 @@ export function App() {
             activeFault,
             pkceTelemetry
           );
-          setLastMcpResult(simulated);
-          setApiResult(simulated);
-          setMcpAuditEntries(getSimulatedMcpAuditLog());
+          dispatch({ type: "SET_LAST_MCP_RESULT", result: simulated });
+          dispatch({ type: "SET_API_RESULT", result: simulated });
+          dispatch({ type: "SET_MCP_AUDIT_ENTRIES", entries: getSimulatedMcpAuditLog() });
         } else {
           const dpop = await createBrowserDpopProof({
             accessToken: stepUpObo.accessToken,
@@ -874,13 +877,13 @@ export function App() {
             },
             { DPoP: dpop.dpopProof }
           );
-          setLastMcpResult(liveResult);
-          setApiResult(liveResult);
+          dispatch({ type: "SET_LAST_MCP_RESULT", result: liveResult });
+          dispatch({ type: "SET_API_RESULT", result: liveResult });
           const freshAudit = await fetchMcpAuditLog(config.backendApiUrl);
-          setMcpAuditEntries(freshAudit);
+          dispatch({ type: "SET_MCP_AUDIT_ENTRIES", entries: freshAudit });
         }
       } finally {
-        setMcpLoadingTool(null);
+        dispatch({ type: "SET_MCP_LOADING_TOOL", tool: null });
       }
     },
     [
@@ -897,23 +900,23 @@ export function App() {
   );
 
   const toggleTheme = useCallback(() => {
-    setTheme((prev) => (prev === "dark" ? "light" : "dark"));
+    dispatch({ type: "TOGGLE_THEME" });
   }, []);
 
   const toggleAttackLab = useCallback(() => {
-    setAttackLabOpen((prev) => !prev);
+    dispatch({ type: "TOGGLE_ATTACK_LAB" });
   }, []);
 
   const openCodeExporter = useCallback(() => {
-    setExporterOpen(true);
+    dispatch({ type: "SET_EXPORTER_OPEN", open: true });
   }, []);
 
   const closeCodeExporter = useCallback(() => {
-    setExporterOpen(false);
+    dispatch({ type: "SET_EXPORTER_OPEN", open: false });
   }, []);
 
   const closePalette = useCallback(() => {
-    setPaletteOpen(false);
+    dispatch({ type: "SET_PALETTE_OPEN", open: false });
   }, []);
 
   const paletteActions: readonly CommandPaletteAction[] = useMemo(() => {
@@ -964,7 +967,9 @@ export function App() {
         label: "Jump to Stage 06 · AI Agent OBO & MCP Guard",
         hint: "Stage 06 · RFC 8693",
         keywords: "ai agent obo mcp 8693 delegation",
-        run: () => handleSwitchFlowMode("agent")
+        run: () => {
+          void handleSwitchFlowMode("agent");
+        }
       }
     ];
 
@@ -978,7 +983,7 @@ export function App() {
       hint: presetItem.rfc,
       keywords: `fault attack lab ${presetItem.label} ${presetItem.rfc}`,
       run: () => {
-        setAttackLabOpen(true);
+        dispatch({ type: "SET_ATTACK_LAB_OPEN", open: true });
         handleChangeFault(presetItem.createDefaultState());
       }
     }));
@@ -993,7 +998,9 @@ export function App() {
             : "Switch to Human CIAM Flow (5-Stage)",
         hint: flowMode === "human" ? "6-Stage" : "5-Stage",
         keywords: "mode toggle human agent mcp 8693",
-        run: () => handleSwitchFlowMode(flowMode === "human" ? "agent" : "human")
+        run: () => {
+          void handleSwitchFlowMode(flowMode === "human" ? "agent" : "human");
+        }
       },
       {
         id: "persona-dev",
@@ -1001,7 +1008,9 @@ export function App() {
         label: "Load Demo Developer Persona",
         hint: "Standard User",
         keywords: "demo developer persona user token",
-        run: () => onDemoLogin("user")
+        run: () => {
+          void onDemoLogin("user");
+        }
       },
       {
         id: "persona-admin",
@@ -1116,196 +1125,222 @@ export function App() {
     openCodeExporter,
     selectedStage,
     session,
+    setSelectedStage,
     showToast,
     theme,
     toggleTheme
   ]);
 
+  const contextValue = useMemo(() => ({ state, dispatch }), [state]);
+
   return (
-    <div className="app-backdrop">
-      <div className="app-shell">
-        <header className="topbar">
-          <div className="brand">
-            <div className="brand-icon">
-              <ShieldCheck size={20} />
-            </div>
-            <div>
-              <div className="brand-title-row">
-                <h1>WSO2 Identity Integration Console</h1>
-                <span className="brand-tag">Choreo Labs · IS 7.0 &amp; Asgardeo</span>
-                {!backendHealth.reachable && (
-                  <span
-                    className="sim-mode-badge"
-                    title="Express backend unreachable — full protocol simulation runs locally in browser with zero errors"
-                  >
-                    Browser Simulation Mode
-                  </span>
-                )}
+    <ConsoleContext.Provider value={contextValue}>
+      <div className="app-backdrop">
+        <div className="app-shell">
+          <header className="topbar">
+            <div className="brand">
+              <div className="brand-icon">
+                <ShieldCheck size={20} />
               </div>
-              <p>
-                OAuth 2.0 OIDC PKCE (S256) · Stateless RS256 JWKS · Attack Lab · RFC 8693 AI Agent
-                MCP Guard
-              </p>
+              <div>
+                <div className="brand-title-row">
+                  <h1>WSO2 Identity Integration Console</h1>
+                  <span className="brand-tag">Choreo Labs · IS 7.0 &amp; Asgardeo</span>
+                  {!backendHealth.reachable && (
+                    <span
+                      className="sim-mode-badge"
+                      title="Express backend unreachable — full protocol simulation runs locally in browser with zero errors"
+                    >
+                      Browser Simulation Mode
+                    </span>
+                  )}
+                </div>
+                <p>
+                  OAuth 2.0 OIDC PKCE (S256) · Stateless RS256 JWKS · Attack Lab · RFC 8693 AI
+                  Agent MCP Guard
+                </p>
+              </div>
             </div>
-          </div>
 
-          <div className="topbar-right">
-            {/* Human CIAM (5-Stage) vs AI Agent Delegation (6-Stage) Switch */}
-            <div className="segmented-tabs mode-switch-tabs" role="tablist" aria-label="Architecture Flow Mode">
+            <div className="topbar-right">
+              <div
+                className="segmented-tabs mode-switch-tabs"
+                role="tablist"
+                aria-label="Architecture Flow Mode"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={flowMode === "human"}
+                  className={`seg-tab ${flowMode === "human" ? "seg-tab-active" : ""}`}
+                  onClick={() => {
+                    void handleSwitchFlowMode("human");
+                  }}
+                >
+                  <UserCheck size={13} />
+                  Human CIAM (5-Stage)
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={flowMode === "agent"}
+                  className={`seg-tab ${flowMode === "agent" ? "seg-tab-active seg-tab-agent" : ""}`}
+                  onClick={() => {
+                    void handleSwitchFlowMode("agent");
+                  }}
+                >
+                  <Bot size={13} />
+                  AI Agent + MCP (6-Stage)
+                </button>
+              </div>
+
               <button
                 type="button"
-                role="tab"
-                aria-selected={flowMode === "human"}
-                className={`seg-tab ${flowMode === "human" ? "seg-tab-active" : ""}`}
-                onClick={() => handleSwitchFlowMode("human")}
+                className="cmdk-trigger"
+                onClick={() => dispatch({ type: "SET_PALETTE_OPEN", open: true })}
+                aria-label="Open Command Palette (Cmd+K)"
+                title="Open Command Palette (Cmd+K / Ctrl+K)"
               >
-                <UserCheck size={13} />
-                Human CIAM (5-Stage)
+                <Command size={13} />
+                <span>K</span>
               </button>
+
+              <div className="status-pill">
+                <span className={`status-dot ${session ? "dot-active" : "dot-idle"}`} />
+                <span>
+                  {session
+                    ? session.mode === "live"
+                      ? "Live OIDC"
+                      : `Demo · ${
+                          session.demoRole === "admin"
+                            ? "Admin"
+                            : session.demoRole === "auditor"
+                              ? "Auditor"
+                              : "Developer"
+                        }`
+                    : "Unauthenticated"}
+                </span>
+              </div>
+
               <button
                 type="button"
-                role="tab"
-                aria-selected={flowMode === "agent"}
-                className={`seg-tab ${flowMode === "agent" ? "seg-tab-active seg-tab-agent" : ""}`}
-                onClick={() => handleSwitchFlowMode("agent")}
+                className="theme-toggle"
+                onClick={toggleTheme}
+                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+                title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
               >
-                <Bot size={13} />
-                AI Agent + MCP (6-Stage)
+                {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
+                <span>{theme === "dark" ? "Light" : "Dark"}</span>
               </button>
             </div>
+          </header>
 
-            <button
-              type="button"
-              className="cmdk-trigger"
-              onClick={() => setPaletteOpen(true)}
-              aria-label="Open Command Palette (Cmd+K)"
-              title="Open Command Palette (Cmd+K / Ctrl+K)"
-            >
-              <Command size={13} />
-              <span>K</span>
-            </button>
-
-            <div className="status-pill">
-              <span className={`status-dot ${session ? "dot-active" : "dot-idle"}`} />
-              <span>
-                {session
-                  ? session.mode === "live"
-                    ? "Live OIDC"
-                    : `Demo · ${session.demoRole === "admin" ? "Admin" : "Developer"}`
-                  : "Unauthenticated"}
-              </span>
-            </div>
-
-            <button
-              type="button"
-              className="theme-toggle"
-              onClick={toggleTheme}
-              aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-              title={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-            >
-              {theme === "dark" ? <Sun size={15} /> : <Moon size={15} />}
-              <span>{theme === "dark" ? "Light" : "Dark"}</span>
-            </button>
-          </div>
-        </header>
-
-        <main className="main-stack">
-          <OidcFlowVisualizer
-            config={config}
-            flowMode={flowMode}
-            selectedStage={selectedStage}
-            session={session}
-            claims={claims}
-            delegatedSession={delegatedSession}
-            pkceTelemetry={pkceTelemetry}
-            lastApiResult={apiResult}
-            lastMcpResult={lastMcpResult}
-            activeFault={activeFault}
-            faultEval={faultEval}
-            attackLabOpen={attackLabOpen}
-            mcpLoadingTool={mcpLoadingTool}
-            mcpAuditEntries={mcpAuditEntries}
-            pendingCibaRequest={pendingCibaRequest}
-            verificationMode={verificationMode}
-            tokenRevoked={tokenRevoked}
-            onSelectStage={setSelectedStage}
-            onChangeFault={handleChangeFault}
-            onToggleAttackLab={toggleAttackLab}
-            onRegeneratePkce={regeneratePkce}
-            onRefreshDelegatedToken={handleRefreshDelegatedToken}
-            onInvokeMcpTool={handleInvokeMcpTool}
-            onDecisionCiba={handleDecisionCiba}
-            onChangeVerificationMode={setVerificationMode}
-            onRevokeToken={handleRevokeToken}
-            onOpenCodeExporter={openCodeExporter}
-          />
-
-          <section className="grid-2">
-            <AuthSessionCard
+          <main className="main-stack">
+            <OidcFlowVisualizer
               config={config}
-              session={session}
-              authError={authError}
-              onSelectPreset={handleSelectPreset}
-              onLiveLogin={onLiveLogin}
-              onDemoLogin={onDemoLogin}
-              onLogout={onLogout}
-              onNotifyCopy={showToast}
-            />
-
-            <JwtClaimsInspector
               flowMode={flowMode}
-              decoded={decoded}
+              selectedStage={selectedStage}
+              session={session}
               claims={claims}
-              delegatedDecoded={delegatedDecoded}
-              delegatedClaims={delegatedClaims}
+              delegatedSession={delegatedSession}
+              pkceTelemetry={pkceTelemetry}
+              lastApiResult={apiResult}
+              lastMcpResult={lastMcpResult}
+              activeFault={activeFault}
+              faultEval={faultEval}
+              attackLabOpen={attackLabOpen}
+              mcpLoadingTool={mcpLoadingTool}
+              mcpAuditEntries={mcpAuditEntries}
+              pendingCibaRequest={pendingCibaRequest}
+              verificationMode={verificationMode}
+              tokenRevoked={tokenRevoked}
+              onSelectStage={setSelectedStage}
+              onChangeFault={handleChangeFault}
+              onToggleAttackLab={toggleAttackLab}
+              onRegeneratePkce={regeneratePkce}
+              onRefreshDelegatedToken={() => {
+                void handleRefreshDelegatedToken();
+              }}
+              onInvokeMcpTool={handleInvokeMcpTool}
+              onDecisionCiba={(decision) => {
+                void handleDecisionCiba(decision);
+              }}
+              onChangeVerificationMode={setVerificationMode}
+              onRevokeToken={() => {
+                void handleRevokeToken();
+              }}
+              onOpenCodeExporter={openCodeExporter}
             />
-          </section>
 
-          <ApiTestBench
-            executionMode={executionMode}
-            backendHealth={backendHealth}
-            loadingEndpoint={loadingEndpoint}
-            apiResult={apiResult}
-            faultEval={faultEval}
-            onChangeMode={handleChangeMode}
-            onInvoke={handleInvokeEndpoint}
-          />
-        </main>
+            <section className="grid-2">
+              <AuthSessionCard
+                config={config}
+                session={session}
+                authError={authError}
+                onSelectPreset={handleSelectPreset}
+                onLiveLogin={onLiveLogin}
+                onDemoLogin={(role) => {
+                  void onDemoLogin(role);
+                }}
+                onLogout={onLogout}
+                onNotifyCopy={showToast}
+              />
 
-        <footer className="app-footer">
-          <span>
-            Choreo Labs (formerly WSO2) CIAM &amp; AI Agent Identity Reference · React 19 + Strict
-            TypeScript + Express RS256 JWKS
-          </span>
-          <span>RFC 7636 PKCE · RFC 8725 · RFC 8693 OBO · Press ⌘K for Commands</span>
-        </footer>
-      </div>
+              <JwtClaimsInspector
+                flowMode={flowMode}
+                decoded={decoded}
+                claims={claims}
+                delegatedDecoded={delegatedDecoded}
+                delegatedClaims={delegatedClaims}
+              />
+            </section>
 
-      <CommandPalette
-        isOpen={paletteOpen}
-        actions={paletteActions}
-        onClose={closePalette}
-      />
+            <ApiTestBench
+              executionMode={executionMode}
+              backendHealth={backendHealth}
+              loadingEndpoint={loadingEndpoint}
+              apiResult={apiResult}
+              faultEval={faultEval}
+              onChangeMode={handleChangeMode}
+              onInvoke={handleInvokeEndpoint}
+            />
+          </main>
 
-      <CodeExporterDrawer
-        isOpen={exporterOpen}
-        config={config}
-        flowMode={flowMode}
-        selectedStage={selectedStage}
-        activeToken={session?.accessToken ?? null}
-        faultEval={faultEval}
-        delegatedSession={delegatedSession}
-        onClose={closeCodeExporter}
-        onNotifyCopy={showToast}
-      />
-
-      {toastMessage && (
-        <div className="toast-banner" role="status" aria-live="polite">
-          <ShieldCheck size={14} />
-          <span>{toastMessage}</span>
+          <footer className="app-footer">
+            <span>
+              Choreo Labs (formerly WSO2) CIAM &amp; AI Agent Identity Reference · React 19 + Strict
+              TypeScript + Express RS256 JWKS
+            </span>
+            <span>RFC 7636 PKCE · RFC 8725 · RFC 8693 OBO · RFC 9449 DPoP · Press ⌘K for Commands</span>
+          </footer>
         </div>
-      )}
-    </div>
+
+        <CommandPalette
+          isOpen={paletteOpen}
+          actions={paletteActions}
+          onClose={closePalette}
+        />
+
+        <CodeExporterDrawer
+          isOpen={exporterOpen}
+          config={config}
+          flowMode={flowMode}
+          selectedStage={selectedStage}
+          activeToken={session?.accessToken ?? null}
+          faultEval={faultEval}
+          delegatedSession={delegatedSession}
+          onClose={closeCodeExporter}
+          onNotifyCopy={showToast}
+        />
+
+        {toastMessage && (
+          <div className="toast-banner" role="status" aria-live="polite">
+            <ShieldCheck size={14} />
+            <span>{toastMessage}</span>
+          </div>
+        )}
+      </div>
+    </ConsoleContext.Provider>
   );
 }
 
