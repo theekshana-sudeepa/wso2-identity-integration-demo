@@ -12,6 +12,7 @@ permissions:
 jobs:
   verify:
     name: Node 22 · Full-Stack Verification
+    if: github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     strategy:
       matrix:
