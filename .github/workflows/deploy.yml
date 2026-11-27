@@ -41,7 +41,7 @@ jobs:
           cp frontend/dist/index.html frontend/dist/404.html
 
       - name: Upload static SPA build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: github-pages-static-bundle
           path: "./frontend/dist"

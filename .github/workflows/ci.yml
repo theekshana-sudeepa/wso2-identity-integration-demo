@@ -44,7 +44,7 @@ jobs:
       - name: Vitest unit, security & policy contract suites
         run: npm test
       - name: Upload Playwright config & E2E verification artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: verification-summary
