@@ -1,15 +1,10 @@
 {
   "name": "wso2-identity-integration-demo",
-  "version": "2.0.0",
-  "description": "Flagship full-stack CIAM & OIDC PKCE visual showcase for Choreo Labs (formerly WSO2) — WSO2 Identity Server 7.0 & Asgardeo, featuring an interactive PKCE/JWKS flow visualizer, RS256 verification, and RBAC enforcement.",
+  "version": "3.0.0",
+  "description": "Flagship full-stack WSO2 API Manager 4.x, Micro Integrator (Synapse/Ballerina EIP), Core DSA Engine & WSO2 IS 7.0 / Asgardeo CIAM reference platform.",
   "author": "Theekshana Sudeepa",
   "license": "MIT",
   "private": true,
-  "workspaces": [
-    "packages/identity-policy",
-    "backend",
-    "frontend"
-  ],
   "scripts": {
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
