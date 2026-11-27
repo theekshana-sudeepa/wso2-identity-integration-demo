@@ -113,6 +113,30 @@ export function buildOpenApiSpec(): Record<string, unknown> {
           responses: { "200": { description: "Agent activity audit timeline" } }
         }
       },
+      "/api/integration/orders/{orderId}/mediate": {
+        post: {
+          summary:
+            "WSO2 API Manager 4.x Gateway + Micro Integrator EIP Mediation Pipeline (Radix Trie, Token Bucket, X-JWT-Assertion, CBR, Scatter-Gather, PayloadFactory, Circuit Breaker & Min-Heap DLQ)",
+          tags: ["WSO2 APIM & Micro Integrator"],
+          security: [{ BearerRS256: [] }],
+          responses: {
+            "200": { description: "Correlated Scatter-Gather + PayloadFactory canonical enterprise JSON response" },
+            "400": { description: "Mediation DAG cycle detected by Kahn's O(V + E) topological planner" },
+            "401": { description: "Missing or invalid OAuth2 RS256 Bearer token at APIM Key Manager" },
+            "429": { description: "WSO2 APIM Subscription Tier quota exceeded (Token Bucket O(1) throttler)" }
+          }
+        }
+      },
+      "/api/integration/dsa-telemetry": {
+        get: {
+          summary:
+            "Live telemetry and Big-O complexity metrics for the 5 Core Data Structures & Algorithms powering APIM and Micro Integrator",
+          tags: ["WSO2 APIM & Micro Integrator"],
+          responses: {
+            "200": { description: "Radix Trie, Doubly-Linked LRU, Token Bucket, FSM Circuit Breaker, Min-Heap DLQ & DAG Topological Sort state" }
+          }
+        }
+      },
       "/dev-idp/.well-known/openid-configuration": {
         get: {
           summary: "Local Dev IdP OIDC Discovery document",

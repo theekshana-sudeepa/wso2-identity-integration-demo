@@ -98,3 +98,62 @@ export function evaluateSharedEndpointStatus(
   }
   return successCode;
 }
+
+export type SharedApimSubscriptionTier = "Bronze" | "Silver" | "Gold" | "AI-Agent-MCP";
+export type SharedIntegrationFaultMode =
+  | "nominal"
+  | "throttle_spike"
+  | "upstream_timeout_cb"
+  | "dag_cycle_fault";
+export type SharedDsaAlgorithmId =
+  | "radix_trie"
+  | "doubly_linked_lru"
+  | "token_bucket"
+  | "circuit_breaker_min_heap"
+  | "dag_topological_sort";
+
+export interface SharedDsaAlgorithmCatalogEntry {
+  readonly id: SharedDsaAlgorithmId;
+  readonly name: string;
+  readonly timeComplexity: string;
+  readonly spaceComplexity: string;
+  readonly wso2ProductComponent: string;
+}
+
+export const SHARED_DSA_CATALOG: readonly SharedDsaAlgorithmCatalogEntry[] = [
+  {
+    id: "radix_trie",
+    name: "Radix Prefix Segment Trie",
+    timeComplexity: "O(k) where k = URL path segments",
+    spaceComplexity: "O(N * k)",
+    wso2ProductComponent: "WSO2 API Manager Gateway / Synapse URI-Template Matcher"
+  },
+  {
+    id: "doubly_linked_lru",
+    name: "Doubly-Linked List + HashMap LRU Cache (with TTL)",
+    timeComplexity: "O(1) strict get / put / evict",
+    spaceComplexity: "O(C) capacity",
+    wso2ProductComponent: "WSO2 APIM Response Cache Mediator & JWKS kid Cache"
+  },
+  {
+    id: "token_bucket",
+    name: "Token Bucket Continuous Refill Throttler",
+    timeComplexity: "O(1) arithmetic refill & consume",
+    spaceComplexity: "O(S) active subscribers",
+    wso2ProductComponent: "WSO2 APIM Traffic Manager Subscription Tiers (Bronze/Silver/Gold)"
+  },
+  {
+    id: "circuit_breaker_min_heap",
+    name: "FSM Circuit Breaker + Binary Min-Heap Priority Queue",
+    timeComplexity: "O(1) FSM transition · O(log n) Min-Heap enqueue/poll",
+    spaceComplexity: "O(n) queued DLQ retry messages",
+    wso2ProductComponent: "WSO2 Micro Integrator Endpoint SuspendOnFailure & Message Processor DLQ"
+  },
+  {
+    id: "dag_topological_sort",
+    name: "DAG Kahn's BFS Topological Sort & Cycle Detector",
+    timeComplexity: "O(V + E) vertices + dependency edges",
+    spaceComplexity: "O(V + E)",
+    wso2ProductComponent: "WSO2 Micro Integrator Mediation Sequence & Clone/Aggregate Planner"
+  }
+];

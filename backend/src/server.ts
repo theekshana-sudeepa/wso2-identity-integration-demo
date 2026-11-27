@@ -10,6 +10,7 @@ import {
   createRequestContextMiddleware
 } from "./middleware/rateLimitAndLogger.js";
 import { createApiRouter } from "./routes/apiRoutes.js";
+import { createIntegrationRouter } from "./routes/integrationRoutes.js";
 import {
   createMcpRouter,
   PROTECTED_RESOURCE_METADATA_URL
@@ -48,13 +49,18 @@ export function createApp(options?: CreateAppOptions): Express {
         "Content-Type",
         "DPoP",
         "X-Verification-Mode",
-        "X-Request-Id"
+        "X-Request-Id",
+        "X-WSO2-Subscription-Tier"
       ],
       exposedHeaders: [
         "WWW-Authenticate",
         "X-Request-Id",
         "X-RateLimit-Limit",
-        "X-RateLimit-Remaining"
+        "X-RateLimit-Remaining",
+        "X-WSO2-Throttle-Tier",
+        "X-JWT-Assertion",
+        "X-Correlation-ID",
+        "Retry-After"
       ]
     })
   );
@@ -116,6 +122,7 @@ export function createApp(options?: CreateAppOptions): Express {
 
   app.use("/api/v1", apiLimiter, createApiRouter(authMiddleware));
   app.use("/api/mcp", apiLimiter, createMcpRouter(mcpAuthMiddleware));
+  app.use("/api/integration", apiLimiter, createIntegrationRouter(authMiddleware));
 
   app.use((_req, res) => {
     res.status(404).json({

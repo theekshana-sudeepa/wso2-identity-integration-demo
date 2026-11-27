@@ -963,6 +963,8 @@ export interface GeneratedCodeSnippets {
   readonly curl: string;
   readonly typescript: string;
   readonly oidcConfigJson: string;
+  readonly synapseXml: string;
+  readonly ballerinaBal: string;
   readonly targetEndpoint: string;
 }
 
@@ -1108,10 +1110,71 @@ export function generateCodeSnippets(input: CodeExporterInput): GeneratedCodeSni
       : {})
   };
 
+  const synapseXml = [
+    `<!-- WSO2 Micro Integrator (MI 4.3 / Apache Synapse) Mediation Artifact -->`,
+    `<api context="/api/integration/orders" name="EnterpriseOrderIntegrationAPI" version="1.0.0" version-type="context" xmlns="http://ws.apache.org/ns/synapse">`,
+    `  <resource methods="POST" uri-template="/{orderId}/mediate">`,
+    `    <inSequence>`,
+    `      <property expression="$trp:X-JWT-Assertion" name="APIM_BACKEND_JWT" scope="default" type="STRING"/>`,
+    `      <property expression="json-eval($.amountUsd)" name="AMOUNT_USD" scope="default" type="STRING"/>`,
+    `      <!-- Content-Based Router (CBR) -->`,
+    `      <filter xpath="number(get-property('AMOUNT_USD')) &gt;= 1000">`,
+    `        <then><property name="CBR_ROUTE" value="HIGH_VALUE_FRAUD_SCREEN"/></then>`,
+    `        <else><property name="CBR_ROUTE" value="FAST_TRACK_STANDARD_ROUTE"/></else>`,
+    `      </filter>`,
+    `      <!-- Scatter-Gather Parallel Clone Mediator -->`,
+    `      <clone id="ORDER_SCATTER_GATHER" sequential="false">`,
+    `        <target><sequence><call><endpoint key="OrderCoreServiceEP"/></call></sequence></target>`,
+    `        <target><sequence><call><endpoint key="WarehouseInventoryFailoverEP"/></call></sequence></target>`,
+    `        <target><sequence><call><endpoint key="FraudRiskScoringServiceEP"/></call></sequence></target>`,
+    `      </clone>`,
+    `    </inSequence>`,
+    `    <outSequence>`,
+    `      <aggregate id="ORDER_SCATTER_GATHER">`,
+    `        <completeCondition timeout="3"><messageCount max="-1" min="3"/></completeCondition>`,
+    `        <onComplete enclosingElementProperty="AggregatedRoot" expression="$body/*">`,
+    `          <payloadFactory media-type="json">`,
+    `            <format>{"schemaVersion":"urn:wso2:mi:canonical-order:v3","route":"$1","aggregated":$2}</format>`,
+    `            <args>`,
+    `              <arg evaluator="xml" expression="get-property('CBR_ROUTE')"/>`,
+    `              <arg evaluator="json" expression="$.AggregatedRoot"/>`,
+    `            </args>`,
+    `          </payloadFactory>`,
+    `          <respond/>`,
+    `        </onComplete>`,
+    `      </aggregate>`,
+    `    </outSequence>`,
+    `  </resource>`,
+    `</api>`
+  ].join("\n");
+
+  const ballerinaBal = [
+    `// WSO2 Ballerina (Swan Lake) — Concurrent Scatter-Gather & Circuit Breaker Service`,
+    `import ballerina/http;`,
+    ``,
+    `service /api/integration/orders on new http:Listener(8290) {`,
+    `    isolated resource function post [string orderId]/mediate(`,
+    `            @http:Header {name: "X-JWT-Assertion"} string? apimBackendJwt,`,
+    `            @http:Payload json payload) returns json|error {`,
+    `        decimal amountUsd = check payload.amountUsd.ensureType(decimal);`,
+    `        string cbrRoute = amountUsd >= 1000d ? "HIGH_VALUE_FRAUD_SCREEN" : "FAST_TRACK_STANDARD_ROUTE";`,
+    `        fork {`,
+    `            worker OrderW returns json { return {orderId, status: "COMMITTED"}; }`,
+    `            worker InventoryW returns json { return {warehouse: "RESERVED_PRIMARY"}; }`,
+    `            worker RiskW returns json { return {route: cbrRoute, verdict: "APPROVED"}; }`,
+    `        }`,
+    `        record {json OrderW; json InventoryW; json RiskW;} branches = wait {OrderW, InventoryW, RiskW};`,
+    `        return {schemaVersion: "urn:wso2:ballerina:canonical-order:v3", orderId, cbrRoute, branches};`,
+    `    }`,
+    `}`
+  ].join("\n");
+
   return {
     curl,
     typescript,
     oidcConfigJson: JSON.stringify(oidcConfigObj, null, 2),
+    synapseXml,
+    ballerinaBal,
     targetEndpoint
   };
 }

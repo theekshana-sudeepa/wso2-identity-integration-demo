@@ -4,6 +4,7 @@ import { ApiTestBench } from "./components/ApiTestBench";
 import { AuthSessionCard } from "./components/AuthSessionCard";
 import { CodeExporterDrawer } from "./components/CodeExporterDrawer";
 import { CommandPalette, type CommandPaletteAction } from "./components/CommandPalette";
+import { IntegrationWorkbench } from "./components/IntegrationWorkbench";
 import { JwtClaimsInspector } from "./components/JwtClaimsInspector";
 import { OidcFlowVisualizer } from "./components/OidcFlowVisualizer";
 import {
@@ -1144,8 +1145,8 @@ export function App() {
               </div>
               <div>
                 <div className="brand-title-row">
-                  <h1>WSO2 Identity Integration Console</h1>
-                  <span className="brand-tag">Choreo Labs · IS 7.0 &amp; Asgardeo</span>
+                  <h1>WSO2 Identity, API Manager &amp; Micro Integrator Console</h1>
+                  <span className="brand-tag">Choreo Labs · IS 7.0 · APIM 4.x · MI EIP</span>
                   {!backendHealth.reachable && (
                     <span
                       className="sim-mode-badge"
@@ -1156,8 +1157,9 @@ export function App() {
                   )}
                 </div>
                 <p>
-                  OAuth 2.0 OIDC PKCE (S256) · Stateless RS256 JWKS · Attack Lab · RFC 8693 AI
-                  Agent MCP Guard
+                  OIDC PKCE (S256) · WSO2 APIM Gateway (X-JWT-Assertion &amp; Token Bucket) · Micro
+                  Integrator EIP (CBR, Scatter-Gather, PayloadFactory) · Core DSA Engine · RFC 8693
+                  MCP Guard
                 </p>
               </div>
             </div>
@@ -1294,6 +1296,15 @@ export function App() {
                 delegatedClaims={delegatedClaims}
               />
             </section>
+
+            <IntegrationWorkbench
+              baseUrl={config.backendApiUrl}
+              executionMode={executionMode}
+              backendHealth={backendHealth}
+              session={session}
+              claims={claims}
+              onNotify={showToast}
+            />
 
             <ApiTestBench
               executionMode={executionMode}

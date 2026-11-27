@@ -1,0 +1,58 @@
+# ==============================================================================
+# WSO2 API Manager (APIM 4.3 / APK) — Declarative API Definition (apictl format)
+# Features:
+#   - WSO2 Identity Server 7.0 / Asgardeo OAuth2 Key Manager Integration
+#   - Subscription Throttling Tiers (Bronze, Silver, Gold, AI-Agent-MCP)
+#   - Backend JWT Generation (X-JWT-Assertion passed to WSO2 Micro Integrator)
+#   - Response Caching & Endpoint Circuit Breaker Configuration
+# ==============================================================================
+type: api
+version: v4.3.0
+data:
+  name: EnterpriseOrderIntegrationAPI
+  context: /api/integration/orders
+  version: v1.0.0
+  provider: admin@wso2.com
+  lifeCycleStatus: PUBLISHED
+  responseCachingEnabled: true
+  cacheTimeout: 60
+  isDefaultVersion: true
+  type: HTTP
+  transport:
+    - http
+    - https
+  policies:
+    - Bronze
+    - Silver
+    - Gold
+    - AI-Agent-MCP
+  authorizationHeader: Authorization
+  securityScheme:
+    - oauth2
+    - oauth_basic_auth_api_key_mandatory
+  backendJwtConfiguration:
+    enabled: true
+    jwtHeader: X-JWT-Assertion
+    signingAlgorithm: SHA256withRSA
+    tokenTtl: 900
+    customClaims:
+      - claimUri: http://wso2.org/claims/enduser
+      - claimUri: http://wso2.org/claims/tier
+      - claimUri: http://wso2.org/claims/role
+  endpointConfig:
+    endpoint_type: http
+    production_endpoints:
+      url: http://choreo-micro-integrator:8290/api/integration/orders
+      config:
+        retryTimeOut: 3
+        retryDelay: 2000
+        suspendDuration: 15000
+    failover_endpoints:
+      - url: http://choreo-micro-integrator-replica:8290/api/integration/orders
+  operations:
+    - target: /{orderId}/mediate
+      verb: POST
+      authType: Application & Application User
+      throttlingPolicy: Silver
+      scopes:
+        - orders:read

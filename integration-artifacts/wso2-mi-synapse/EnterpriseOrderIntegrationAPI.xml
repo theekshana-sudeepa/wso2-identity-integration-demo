@@ -1,0 +1,120 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WSO2 Micro Integrator (MI 4.3 / Apache Synapse) — Declarative Integration Artifact
+  Implements:
+    1. Inbound X-JWT-Assertion & Correlation-ID Extraction from WSO2 API Manager Gateway
+    2. Content-Based Router (Switch/Filter Mediator) on Order Amount & Region
+    3. Scatter-Gather Pattern (Clone + Aggregate Mediators) across Order, Inventory & Fraud Services
+    4. Endpoint Resiliency (Circuit Breaker via <suspendOnFailure> + Failover Group)
+    5. Dead-Letter Channel (Message Store + Scheduled Message Processor with Exponential Backoff)
+    6. Message Transformation (PayloadFactory Mediator: Upstream SOAP/XML -> Canonical JSON)
+-->
+<api context="/api/integration/orders" name="EnterpriseOrderIntegrationAPI" version="1.0.0" version-type="context" xmlns="http://ws.apache.org/ns/synapse">
+  <resource methods="POST" uri-template="/{orderId}/mediate">
+    <inSequence>
+      <!-- 1. Extract WSO2 API Manager Backend JWT (X-JWT-Assertion) & Correlation ID -->
+      <property expression="$trp:X-JWT-Assertion" name="APIM_BACKEND_JWT" scope="default" type="STRING"/>
+      <property expression="$trp:X-WSO2-Throttle-Tier" name="APIM_SUBSCRIPTION_TIER" scope="default" type="STRING"/>
+      <property expression="json-eval($.orderId)" name="ORDER_ID" scope="default" type="STRING"/>
+      <property expression="json-eval($.amountUsd)" name="AMOUNT_USD" scope="default" type="STRING"/>
+      <property expression="json-eval($.region)" name="ORDER_REGION" scope="default" type="STRING"/>
+
+      <log category="INFO" level="custom">
+        <property expression="get-property('ORDER_ID')" name="MediationOrderId"/>
+        <property expression="get-property('APIM_SUBSCRIPTION_TIER')" name="Wso2ApimTier"/>
+      </log>
+
+      <!-- 2. Content-Based Router (CBR) -->
+      <filter xpath="number(get-property('AMOUNT_USD')) &gt;= 1000">
+        <then>
+          <property name="CBR_SELECTED_ROUTE" scope="default" type="STRING" value="HIGH_VALUE_FRAUD_SCREEN"/>
+        </then>
+        <else>
+          <switch source="get-property('ORDER_REGION')">
+            <case regex="EU">
+              <property name="CBR_SELECTED_ROUTE" scope="default" type="STRING" value="EU_GDPR_COMPLIANCE_ROUTE"/>
+            </case>
+            <default>
+              <property name="CBR_SELECTED_ROUTE" scope="default" type="STRING" value="FAST_TRACK_STANDARD_ROUTE"/>
+            </default>
+          </switch>
+        </else>
+      </filter>
+
+      <!-- 3. Scatter-Gather: Parallel Fan-Out via Clone Mediator -->
+      <clone id="ORDER_SCATTER_GATHER" sequential="false">
+        <target>
+          <sequence>
+            <call>
+              <endpoint key="OrderCoreServiceEP"/>
+            </call>
+          </sequence>
+        </target>
+        <target>
+          <sequence>
+            <call>
+              <endpoint key="WarehouseInventoryFailoverEP"/>
+            </call>
+          </sequence>
+        </target>
+        <target>
+          <sequence>
+            <call>
+              <endpoint key="FraudRiskScoringServiceEP"/>
+            </call>
+          </sequence>
+        </target>
+      </clone>
+    </inSequence>
+
+    <outSequence>
+      <!-- 4. Scatter-Gather: Correlate & Merge Parallel Branch Responses via Aggregate Mediator -->
+      <aggregate id="ORDER_SCATTER_GATHER">
+        <completeCondition timeout="3">
+          <messageCount max="-1" min="3"/>
+        </completeCondition>
+        <onComplete enclosingElementProperty="AggregatedRoot" expression="$body/*">
+          <!-- 5. PayloadFactory Mediator: Transform Legacy Upstream XML into Canonical Enterprise JSON -->
+          <payloadFactory media-type="json">
+            <format>{
+  "schemaVersion": "urn:wso2:mi:canonical-order:v3",
+  "orderId": "$1",
+  "mediationRoute": "$2",
+  "apimTier": "$3",
+  "fulfillmentStatus": "ORCHESTRATED_SUCCESS",
+  "aggregatedBranches": $4
+}</format>
+            <args>
+              <arg evaluator="xml" expression="get-property('ORDER_ID')"/>
+              <arg evaluator="xml" expression="get-property('CBR_SELECTED_ROUTE')"/>
+              <arg evaluator="xml" expression="get-property('APIM_SUBSCRIPTION_TIER')"/>
+              <arg evaluator="json" expression="$.AggregatedRoot"/>
+            </args>
+          </payloadFactory>
+          <property name="messageType" scope="axis2" type="STRING" value="application/json"/>
+          <respond/>
+        </onComplete>
+      </aggregate>
+    </outSequence>
+
+    <faultSequence>
+      <!-- 6. Dead-Letter Channel: Store Failed Payload for Exponential Backoff Message Processor -->
+      <log category="ERROR" level="custom">
+        <property expression="get-property('ERROR_CODE')" name="SynapseErrorCode"/>
+        <property expression="get-property('ERROR_MESSAGE')" name="SynapseErrorMessage"/>
+      </log>
+      <store messageStore="InventoryDeadLetterQueueStore"/>
+      <payloadFactory media-type="json">
+        <format>{
+  "status": "QUEUED_IN_DEAD_LETTER_STORE",
+  "orderId": "$1",
+  "retryPolicy": "ExponentialBackoff_Factor_2.0"
+}</format>
+        <args>
+          <arg evaluator="xml" expression="get-property('ORDER_ID')"/>
+        </args>
+      </payloadFactory>
+      <respond/>
+    </faultSequence>
+  </resource>
+</api>

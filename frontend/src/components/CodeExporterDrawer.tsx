@@ -8,7 +8,7 @@ import {
   type FlowStageId
 } from "../lib/securityLab";
 
-type ExporterTab = "curl" | "typescript" | "oidc_json";
+type ExporterTab = "curl" | "typescript" | "oidc_json" | "synapse_xml" | "ballerina";
 
 interface CodeExporterDrawerProps {
   readonly isOpen: boolean;
@@ -58,7 +58,11 @@ export const CodeExporterDrawer = memo(function CodeExporterDrawer({
       ? snippets.curl
       : activeTab === "typescript"
         ? snippets.typescript
-        : snippets.oidcConfigJson;
+        : activeTab === "synapse_xml"
+          ? snippets.synapseXml
+          : activeTab === "ballerina"
+            ? snippets.ballerinaBal
+            : snippets.oidcConfigJson;
 
   const handleCopy = async () => {
     try {
@@ -69,7 +73,11 @@ export const CodeExporterDrawer = memo(function CodeExporterDrawer({
           ? "Copied curl command to clipboard"
           : activeTab === "typescript"
             ? "Copied strict TypeScript fetch snippet"
-            : "Copied WSO2 IS / Asgardeo OIDC JSON config"
+            : activeTab === "synapse_xml"
+              ? "Copied WSO2 Micro Integrator Synapse XML artifact"
+              : activeTab === "ballerina"
+                ? "Copied WSO2 Ballerina integration service"
+                : "Copied WSO2 IS / Asgardeo OIDC JSON config"
       );
       window.setTimeout(() => setCopied(false), 1600);
     } catch {
@@ -153,6 +161,26 @@ export const CodeExporterDrawer = memo(function CodeExporterDrawer({
             >
               <FileJson size={13} />
               OIDC JSON
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "synapse_xml"}
+              className={`seg-tab ${activeTab === "synapse_xml" ? "seg-tab-active" : ""}`}
+              onClick={() => setActiveTab("synapse_xml")}
+            >
+              <Code2 size={13} />
+              WSO2 MI Synapse XML
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === "ballerina"}
+              className={`seg-tab ${activeTab === "ballerina" ? "seg-tab-active" : ""}`}
+              onClick={() => setActiveTab("ballerina")}
+            >
+              <Terminal size={13} />
+              Ballerina (.bal)
             </button>
           </div>
 

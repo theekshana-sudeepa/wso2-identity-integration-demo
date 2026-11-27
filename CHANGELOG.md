@@ -2,6 +2,28 @@
 
 All notable changes to `wso2-identity-integration-demo` are documented in this file.
 
+## [3.0.0] — 2026-11-27
+
+### Added
+- **WSO2 API Manager (APIM 4.x) Gateway Mediation Engine (`POST /api/integration/orders/:orderId/mediate`)**:
+  - Subscription Tier Throttling Policies (`Bronze`, `Silver`, `Gold`, `AI-Agent-MCP`) emitting `X-WSO2-Throttle-Tier`, `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `Retry-After` headers.
+  - Signed **`X-JWT-Assertion`** Backend Context JWT generation (`http://wso2.org/claims/enduser`, `subscriber`, `applicationname`, `tier`, `role`) propagated from the API Gateway to WSO2 Micro Integrator.
+  - Gateway Response Caching backed by a hand-rolled `O(1)` Doubly-Linked List + HashMap LRU Cache with TTL.
+- **WSO2 Micro Integrator (MI / Apache Synapse) Enterprise Integration Patterns (EIP) Pipeline**:
+  - **Content-Based Router (CBR)** (`<filter>` / `<switch>` mediator) dynamically routing orders to `HIGH_VALUE_FRAUD_SCREEN`, `EU_GDPR_COMPLIANCE_ROUTE`, or `FAST_TRACK_STANDARD_ROUTE`.
+  - **Scatter-Gather Pattern** (`<clone>` + `<aggregate>` mediators) executing concurrent branches across `OrderCoreService`, `WarehouseInventoryService`, and `FraudRiskScoringService`/`EuGdprDataResidencyService` with parallel speedup telemetry.
+  - **Message Transformation** (`<payloadFactory>` mediator) converting legacy upstream SOAP/XML envelopes into canonical enterprise JSON.
+  - **Endpoint Resiliency & Dead-Letter Channel** (`<suspendOnFailure>` Circuit Breaker + `<store>` Message Store & Scheduled Message Processor with exponential backoff).
+- **5-Structure Core Data Structures & Algorithms (DSA) Engine (`backend/src/dsa/integrationDsaEngine.ts` & `frontend/src/lib/integrationDsaEngine.ts`)**:
+  1. `RadixRouteTrie` (`O(k)` segment lookup & URI-template parameter extraction)
+  2. `DoublyLinkedLruTtlCache` (strict `O(1)` pointer-spliced `get`, `put`, `evict` with live MRU↔LRU snapshot)
+  3. `TokenBucketThrottler` (`O(1)` lazy continuous token refill math)
+  4. `CircuitBreakerFsm` (`O(1)` state machine) + `MinHeapRetryQueue` (`O(log n)` array-backed binary min-heap Dead-Letter retry scheduler)
+  5. `planMediationDag` (`O(V + E)` Kahn's BFS topological sort with level-order parallel execution waves & cycle detection)
+- **Deployable WSO2 Artifacts (`integration-artifacts/`) & Code Exporter Tabs**:
+  - Added `integration-artifacts/wso2-mi-synapse/EnterpriseOrderIntegrationAPI.xml`, `integration-artifacts/wso2-apim/api.yaml`, `integration-artifacts/ballerina/order_integration_service.bal`, and ADR 0005.
+  - Added interactive `IntegrationWorkbench.tsx` and **WSO2 MI Synapse XML** + **Ballerina (`.bal`)** export tabs in `CodeExporterDrawer.tsx`.
+
 ## [2.0.0] — 2026-11-26
 
 ### Added

@@ -1,19 +1,20 @@
 <div align="center">
 
-# Choreo Labs (formerly WSO2) — Identity Integration Console, Attack Lab & AI Agent MCP Guard (v2.0)
+# Choreo Labs (formerly WSO2) — Identity (IS 7.0), API Manager (APIM 4.x), Micro Integrator (EIP) & Core DSA Reference Platform (v3.0)
 
-**Cryptographically real, spec-compliant full-stack CIAM & AI Agent Identity reference platform for Choreo Labs (formerly WSO2) — WSO2 Identity Server 7.0, Asgardeo & Local Dev IdP / STS.**
-*Featuring a 5-Stage Human CIAM + 6th-Stage RFC 8693 / RFC 9449 DPoP / CIBA AI Agent MCP Guard SVG pipeline, a 10-scenario Break-the-Flow Attack Lab, JSON-RPC 2.0 MCP Gateway, and real Web Crypto RS256/ES256 Browser Simulation Mode.*
+**Cryptographically real, spec-compliant full-stack WSO2 Integration, API Management, CIAM & AI Agent Identity reference platform — WSO2 API Manager 4.x, WSO2 Micro Integrator (Synapse / Ballerina EIP), WSO2 Identity Server 7.0 & Asgardeo.**
+*Featuring an interactive WSO2 APIM Gateway + Micro Integrator EIP Workbench (`X-JWT-Assertion`, Content-Based Router, Scatter-Gather `<clone>`/`<aggregate>`, `<payloadFactory>`, Circuit Breaker & Min-Heap DLQ), a 5-Structure Core DSA Engine (`RadixRouteTrie`, `DoublyLinkedLruTtlCache`, `TokenBucketThrottler`, `CircuitBreakerFsm` + `MinHeapRetryQueue`, `planMediationDag`), a 6-Stage OIDC PKCE & RFC 8693 / DPoP / CIBA AI Agent MCP Pipeline, and a 10-Scenario Attack Lab.*
 
 ### [▶ Launch Interactive Live Demo (GitHub Pages)](https://theekshana-sudeepa.github.io/wso2-identity-integration-demo/)
 
 [![Live Demo](https://img.shields.io/badge/%E2%96%B6%20Live%20Demo-GitHub%20Pages-10B981?style=flat-square&logo=github)](https://theekshana-sudeepa.github.io/wso2-identity-integration-demo/)
 [![CI Verification](https://img.shields.io/github/actions/workflow/status/theekshana-sudeepa/wso2-identity-integration-demo/ci.yml?branch=main&style=flat-square&label=CI%20Verification)](https://github.com/theekshana-sudeepa/wso2-identity-integration-demo/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=flat-square)](./LICENSE)
-[![Choreo Labs / WSO2 IS 7.0](https://img.shields.io/badge/Choreo%20Labs%20%7C%20WSO2%20IS-7.0%20%26%20Asgardeo-FF7300?style=flat-square&logo=wso2&logoColor=white)](https://wso2.com/identity-server/)
+[![WSO2 APIM 4.x + Micro Integrator](https://img.shields.io/badge/WSO2%20APIM%204.x%20%2B%20MI-Synapse%20EIP%20%26%20Ballerina-FF7300?style=flat-square&logo=wso2&logoColor=white)](./integration-artifacts/wso2-mi-synapse/EnterpriseOrderIntegrationAPI.xml)
+[![Core DSA Engine](https://img.shields.io/badge/Core%20DSA-Trie%20%C2%B7%20LRU%20%C2%B7%20TokenBucket%20%C2%B7%20MinHeap%20%C2%B7%20DAG-0284C7?style=flat-square)](./backend/src/dsa/integrationDsaEngine.ts)
 [![RFC 8693 + RFC 9449 DPoP](https://img.shields.io/badge/RFC%208693%20%2B%209449-OBO%20%2B%20DPoP%20%2B%20MCP-A78BFA?style=flat-square)](./backend/src/routes/mcpRoutes.ts)
 [![Strict TypeScript](https://img.shields.io/badge/TypeScript-Strict%20Zero--any-3178C6?style=flat-square&logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Vitest 37 Specs](https://img.shields.io/badge/Vitest-37%20Security%20%26%20Contract%20Specs-6E9F18?style=flat-square&logo=vitest&logoColor=white)](./backend/src/__tests__/security.test.ts)
+[![Vitest 45 Specs](https://img.shields.io/badge/Vitest-45%20DSA%2C%20EIP%20%26%20Security%20Specs-6E9F18?style=flat-square&logo=vitest&logoColor=white)](./backend/src/__tests__/integrationDsaAndEip.test.ts)
 
 </div>
 
@@ -23,13 +24,27 @@
 
 ## Executive Capabilities Summary
 
-| Capability | Protocol / Standard | What You Can Inspect & Test |
+| Capability | Protocol / Standard / WSO2 Product | What You Can Inspect & Test |
 | :--- | :--- | :--- |
-| **5-Stage Human CIAM + Local Dev IdP / STS** | `OAuth 2.0` · `OIDC Core 1.0` · `RFC 7636 S256` · `RFC 7517` | In-process RSA-2048 Dev IdP (`/dev-idp/*`) with active + rotated `kid` keys, real SHA-256 PKCE code exchange (`developer`, `admin`, `auditor` personas), stateless `RS256` JWKS LRU cache, and **Stage 04 Stateless JWKS vs. RFC 7662 Token Introspection + RFC 7009 Revocation** trade-off toggle. |
-| **Spec-Compliant MCP Gateway & RFC 8693 OBO** | `MCP 2025-06-18` · `JSON-RPC 2.0` · `RFC 8693` · `RFC 9728` · `RFC 8707` | `POST /api/mcp` (`tools/list` & `tools/call`), `GET /.well-known/oauth-protected-resource`, RFC 8707 resource-bound `MCP_AUDIENCE` (blocking token passthrough), declarative tool registry with JSON Schema validation, `60s` max TTL (`AGENT_TOKEN_MAX_TTL_SECONDS`), nested `act` chain (`depth <= 2`, acyclic) + `may_act` (§4.4), and live **Agent Activity Timeline** (`GET /api/mcp/audit`). |
-| **CIBA Human-in-the-Loop & RFC 9449 DPoP** | `RFC 9449 DPoP (ES256)` · `CIBA Step-Up Consent` | Sender-constrained agent OBO tokens (`cnf.jkt` bound to Web Crypto `ES256` keypair + `dpop+jwt` proof verification + `jti` replay cache) and interactive **CIBA Push Approval Card** (`auth_req_id` → one-time `120s` step-up consent unlocking `export_all_users`). |
-| **10-Scenario Break-the-Flow Attack Lab** | `RFC 7636` · `RFC 6749` · `RFC 8725` · `RFC 7519` · `RFC 8693` · `RFC 9449` · `RFC 8707` | Inject 10 real cryptographic faults (`PKCE Verifier Mismatch [Side-by-Side SHA-256]`, `CSRF State Replay`, `JWT alg:none / HS256 Public-PEM Confusion`, `JWKS kid Miss [401 vs 200 Rotated Key Recover]`, `aud/iss Spoof`, `Expired Token`, `Stolen Agent Token Replay [No DPoP Key]`, `Token Passthrough [RFC 8707]`, `act Chain Depth / Cycle`, `Unauthorized Actor [may_act]`). |
-| **Real Web Crypto Browser Simulation Mode** | `Web Crypto RSASSA-PKCS1-v1_5 & ECDSA P-256` · `Cmd+K` | Static hosting (GitHub Pages) generates real RSA-2048 & ECDSA P-256 keypairs in the browser (`browserCrypto.ts`), signs & cryptographically verifies demo/fault JWTs via `crypto.subtle.verify`, and stays synced with the backend via `@choreo-demo/identity-policy` contract tests. |
+| **WSO2 API Manager (APIM 4.x) Gateway Mediation** | `WSO2 APIM 4.3` · `X-JWT-Assertion` · `Token Bucket Tiers` · `apictl api.yaml` | `POST /api/integration/orders/:orderId/mediate` performs `O(k)` Radix Trie route matching, enforces Subscription Throttling Tiers (`Bronze`, `Silver`, `Gold`, `AI-Agent-MCP`), caches responses in an `O(1)` Doubly-Linked List LRU Cache, and mints signed **`X-JWT-Assertion`** backend context JWTs (`http://wso2.org/claims/enduser`, `tier`, `role`). |
+| **WSO2 Micro Integrator (MI) & Enterprise Integration Patterns (EIP)** | `Apache Synapse XML` · `Ballerina Swan Lake` · `CBR` · `Scatter-Gather` · `PayloadFactory` | Executes **Content-Based Routing (`<filter>`/`<switch>`)**, parallel **Scatter-Gather (`<clone>` + `<aggregate>`)** across Order, Inventory, and Fraud/GDPR services, **Message Transformation (`<payloadFactory>`)** from legacy SOAP/XML to Canonical JSON, and **Endpoint Circuit Breaker + Dead-Letter Message Store (`<store>`)** failover. |
+| **5-Structure Core DSA Engine (Built From Scratch)** | `RadixRouteTrie` · `DoublyLinkedLruTtlCache` · `TokenBucketThrottler` · `MinHeapRetryQueue` · `planMediationDag` | Zero-dependency, complexity-annotated Data Structures & Algorithms powering the APIM Gateway and Micro Integrator with live Big-O telemetry (`GET /api/integration/dsa-telemetry`) and interactive UI inspection of pointer chains, binary heap order, and topological waves. |
+| **5-Stage Human CIAM + Local Dev IdP / STS** | `WSO2 IS 7.0` · `Asgardeo` · `OAuth 2.0` · `OIDC Core 1.0` · `RFC 7636 S256` · `RFC 7517` | In-process RSA-2048 Dev IdP (`/dev-idp/*`) with active + rotated `kid` keys, real SHA-256 PKCE code exchange (`developer`, `admin`, `auditor` personas), stateless `RS256` JWKS cache, and **Stage 04 Stateless JWKS vs. RFC 7662 Token Introspection + RFC 7009 Revocation** trade-off toggle. |
+| **Spec-Compliant MCP Gateway, RFC 8693 OBO, DPoP & CIBA** | `MCP 2025-06-18` · `JSON-RPC 2.0` · `RFC 8693` · `RFC 9449 DPoP` · `RFC 9728` · `RFC 8707` | `POST /api/mcp` (`tools/list` & `tools/call`), sender-constrained `ES256` DPoP proofs (`cnf.jkt` + `jti` replay cache), interactive **CIBA Push Approval Card** (`auth_req_id` → one-time `120s` step-up consent), and **10-Scenario Break-the-Flow Attack Lab**. |
+
+---
+
+## Core Data Structures & Algorithms (DSA) Powering WSO2 APIM & Micro Integrator
+
+Every stage of the WSO2 API Manager Gateway and Micro Integrator EIP pipeline is backed by a first-principles data structure in [integrationDsaEngine.ts](./backend/src/dsa/integrationDsaEngine.ts) and verified in [integrationDsaAndEip.test.ts](./backend/src/__tests__/integrationDsaAndEip.test.ts):
+
+| # | Data Structure / Algorithm | Time Complexity | Space Complexity | WSO2 APIM / Micro Integrator Subsystem |
+| :--- | :--- | :--- | :--- | :--- |
+| **1** | **Radix Prefix Segment Trie (`RadixRouteTrie`)** | Lookup / Insert: `O(k)` path segments | `O(N * k)` | **WSO2 APIM Gateway URI-Template Matcher** — matches `/api/integration/orders/:orderId/mediate` and extracts path parameters with `Static > :param > *` precedence without `O(N)` linear regex scans. |
+| **2** | **Doubly-Linked List + HashMap LRU Cache (`DoublyLinkedLruTtlCache`)** | `get` / `put` / `evict`: Strict `O(1)` | `O(C)` capacity | **WSO2 APIM Response Cache & JWKS Cache** — pointer-based `prev`/`next` node splicing promotes accessed keys to MRU head and evicts LRU tail in `O(1)` with live MRU↔LRU pointer chain inspection. |
+| **3** | **Token Bucket Continuous Refill (`TokenBucketThrottler`)** | `tryConsume`: `O(1)` arithmetic refill | `O(S)` active subscribers | **WSO2 APIM Traffic Manager Subscription Tiers** — enforces `Bronze` (`5 burst / 60 rpm`), `Silver` (`15 burst / 180 rpm`), `Gold` (`50 burst / 600 rpm`), and `AI-Agent-MCP` quotas via lazy `min(cap, tokens + dt * rate)` math. |
+| **4** | **FSM Circuit Breaker + Binary Min-Heap (`CircuitBreakerFsm` + `MinHeapRetryQueue`)** | FSM: `O(1)` · Heap Push/Pop: `O(log n)` · Peek: `O(1)` | `O(n)` queued DLQ messages | **WSO2 Micro Integrator Endpoint Resiliency & Message Processor DLQ** — transitions `CLOSED -> OPEN -> HALF_OPEN -> CLOSED` on upstream failures and orders Dead-Letter retries by earliest exponential backoff `nextRetryMs = now + 1000 * 2^attempt`. |
+| **5** | **DAG Kahn's BFS Topological Sort & Cycle Verifier (`planMediationDag`)** | Schedule & Cycle Check: `O(V + E)` | `O(V + E)` | **WSO2 Micro Integrator Mediation Sequence Planner** — computes level-order parallel execution waves (proving concurrent `<clone>` scatter-gather branches in Wave 5) and blocks cyclic mediator graphs (`400 mediation_dag_cycle_detected`). |
 
 ---
 
@@ -39,11 +54,11 @@
 # 1. Install dependencies
 npm install --prefix backend && npm install --prefix frontend
 
-# 2. Run full verification (Strict TypeScript + ESLint + Prod Build + 37 Vitest Security & Contract Specs)
+# 2. Run full verification (Strict TypeScript + ESLint + Prod Build + 45 Vitest DSA, EIP & Security Specs)
 npm run check
 
-# 3. Run Full-Stack with live Express RS256 JWKS Resource Server + Local Dev IdP / STS
-npm run dev:backend   # Terminal 1 -> http://localhost:5050 (API + Dev IdP + Scalar Docs at /api/docs)
+# 3. Run Full-Stack with live Express WSO2 APIM + Micro Integrator + Dev IdP / STS
+npm run dev:backend   # Terminal 1 -> http://localhost:5050 (APIM/MI + Dev IdP + Scalar Docs at /api/docs)
 npm run dev:frontend  # Terminal 2 -> http://localhost:5173
 
 # 4. Or launch via Docker Compose (Fast Dev IdP profile or Full WSO2 IS 7.0 + DCR Bootstrap profile)
@@ -69,93 +84,104 @@ Switch seamlessly between **WSO2 Identity Server 7.0** and **Asgardeo Cloud** pr
 
 ### 3. First-Class Light & Dark Theme Parity (Asgardeo Cloud + 403 RBAC Policy Rejection)
 
-Engineered with Apple / Linear developer-tool polish and full Dark/Light token parity across SVG pipeline graphs, syntax-highlighted JSON payloads, `Cmd+K` Command Palette, Code Exporter Drawer, and real-time RBAC / MCP policy rejection diagnostics (`HTTP 401` / `HTTP 403` with RFC 6750 `WWW-Authenticate` challenges).
+Engineered with Apple / Linear developer-tool polish and full Dark/Light token parity across SVG pipeline graphs, syntax-highlighted JSON payloads, `Cmd+K` Command Palette, Code Exporter Drawer (including **WSO2 MI Synapse XML** and **Ballerina `.bal`**), and real-time RBAC / MCP policy rejection diagnostics (`HTTP 401` / `HTTP 403` with RFC 6750 `WWW-Authenticate` challenges).
 
 ![Light Theme Identity Console with Asgardeo Preset and RBAC 403 Rejection](./docs/screenshots/03-light-theme-rbac-console.png)
 
 ---
 
-## System Architecture (6-Stage CIAM + AI Agent MCP Delegation + DPoP + CIBA)
+## End-to-End WSO2 Architecture (Identity Server 7.0 + API Manager 4.x + Micro Integrator EIP + Core DSA)
 
 ```mermaid
 flowchart LR
     subgraph Client["Frontend Public Client - React 19 + Strict TypeScript"]
-        UI["Identity Console + useReducer State Machine"]
-        FLOW["5/6-Stage Modular SVG Visualizer"]
-        LAB["10-Scenario Break-the-Flow Attack Lab"]
-        CRYPTO["Web Crypto S256 PKCE + RS256/ES256 DPoP Engine"]
-        INSPECTOR["Human & OBO Agent JWT Inspector"]
+        UI["Console + APIM / MI / DSA Workbench"]
+        CRYPTO["Web Crypto S256 PKCE + RS256 / ES256 DPoP"]
     end
 
-    subgraph IdP["Choreo Labs IdP / Local Dev IdP STS - WSO2 IS 7.0 & Asgardeo"]
-        AUTHZ["Authorize Endpoint - /oauth2/authorize"]
+    subgraph IdP["Key Manager & STS - WSO2 IS 7.0 / Asgardeo / Dev IdP"]
         TOKEN["Token & RFC 8693 OBO STS - /oauth2/token"]
-        CIBA["CIBA Step-Up Consent - /oauth2/ciba/decide"]
-        REV["RFC 7009 Revoke & RFC 7662 Introspect"]
         JWKS["RSA-2048 JWK Set - /oauth2/jwks"]
     end
 
-    subgraph ResourceServer["Backend Resource & MCP Server - Express + Strict TypeScript"]
-        AUTHMW["RS256 Pinning + Typed instanceof Rejection Guard"]
-        DPOP["RFC 9449 DPoP ES256 Proof & jti Replay Guard"]
-        OBOGUARD["RFC 8693 Nested act Chain + 60s TTL Guard"]
-        REGISTRY["Declarative MCP Tool Registry + Audit Ring Buffer"]
-        ROUTES["Protected REST Endpoints - /api/v1/*"]
+    subgraph APIM["WSO2 API Manager 4.x Gateway Layer + Core DSA"]
+        TRIE["RadixRouteTrie - O of k Segment Matcher"]
+        BUCKET["TokenBucketThrottler - O of 1 Subscription Tiers"]
+        LRU["DoublyLinkedLruTtlCache - O of 1 Response Cache"]
+        BJWT["Backend JWT Generator - X-JWT-Assertion"]
+    end
+
+    subgraph MI["WSO2 Micro Integrator Layer - Synapse EIP + Core DSA"]
+        DAG["Kahn Topological Planner - O of V plus E Verifier"]
+        CBR["Content-Based Router - Switch and Filter Mediator"]
+        CLONE["Scatter-Gather - Parallel Clone and Aggregate"]
+        PF["PayloadFactory - Legacy SOAP XML to Canonical JSON"]
+        CB["CircuitBreakerFsm + MinHeapRetryQueue DLQ"]
+    end
+
+    subgraph Backends["Upstream Services & MCP Gateway"]
+        ORD["OrderCoreService"]
+        INV["WarehouseInventoryService + Failover Replica"]
+        RISK["FraudRisk and EuGdprService"]
         MCP["JSON-RPC 2.0 MCP Gateway - POST /api/mcp"]
     end
 
-    UI --> FLOW
-    UI --> LAB
     UI --> CRYPTO
-    CRYPTO -->|1. Auth Request with S256 Challenge| AUTHZ
-    AUTHZ -->|2. Single-Use Code and State| CRYPTO
-    CRYPTO -->|3. PKCE S256 Exchange or RFC 8693 OBO + DPoP jkt| TOKEN
-    TOKEN -->|4. Mint RS256 Human or 60s DPoP-Bound OBO JWT| UI
-    UI --> INSPECTOR
-    UI -->|5. Human API Call with Bearer JWT| AUTHMW
-    UI -->|6. AI Agent JSON-RPC 2.0 Call with Bearer + DPoP Proof| AUTHMW
-    AUTHMW -->|Resolve kid Signing Key| JWKS
-    AUTHMW -->|Optional RFC 7662 Check| REV
-    AUTHMW --> ROUTES
-    AUTHMW --> DPOP
-    DPOP --> OBOGUARD
-    OBOGUARD --> REGISTRY
-    REGISTRY --> MCP
-    UI -->|7. Approve CIBA Step-Up Push Request| CIBA
+    CRYPTO -->|1. PKCE S256 or RFC 8693 OBO Exchange| TOKEN
+    TOKEN -->|2. Signed RS256 Access Token| UI
+    UI -->|3. API or Integration Call with Bearer JWT| TRIE
+    TRIE -->|Verify RS256 Key| JWKS
+    TRIE --> BUCKET
+    BUCKET --> LRU
+    LRU --> BJWT
+    BJWT -->|4. X-JWT-Assertion + Correlation ID| DAG
+    DAG --> CBR
+    CBR --> CLONE
+    CLONE --> ORD
+    CLONE --> INV
+    CLONE --> RISK
+    INV --> CB
+    CLONE --> PF
+    BJWT -->|5. Sender-Constrained DPoP Call| MCP
 ```
 
 ---
 
-## OIDC PKCE, RFC 8693 OBO, RFC 9449 DPoP & CIBA Step-Up Sequence
+## WSO2 API Manager + Micro Integrator Scatter-Gather & Circuit Breaker Sequence
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor User
-    participant SPA as React Public SPA + Agent Client
-    participant IdP as Choreo Labs IdP / Local Dev STS
-    participant MCP as Express JSON-RPC 2.0 MCP Gateway
+    actor Client as React Client / Subscriber
+    participant APIM as WSO2 APIM 4.x Gateway
+    participant MI as WSO2 Micro Integrator
+    participant Services as Order + Inventory + Fraud Services
+    participant DLQ as Min-Heap Dead-Letter Store
 
-    User->>SPA: Authenticate Persona or Enable AI Agent Mode
-    SPA->>SPA: Generate 384-bit PKCE code_verifier, S256 challenge, and ES256 DPoP KeyPair
-    SPA->>IdP: POST /oauth2/authorize + POST /oauth2/token with S256 code_verifier
-    IdP-->>SPA: Mint RS256 Human Access Token with may_act claim
-    SPA->>IdP: RFC 8693 Token Exchange with subject_token, actor_token, resource, and dpop_jkt
-    IdP-->>SPA: Mint 60s Down-Scoped OBO JWT with act.sub, aud=MCP_AUDIENCE, and cnf.jkt
-    SPA->>MCP: POST /api/mcp JSON-RPC 2.0 tools/call with Bearer OBO JWT + ES256 DPoP Proof
-    MCP->>MCP: Verify RS256 JWT, aud==MCP_AUDIENCE, DPoP thumbprint==cnf.jkt, jti replay, and act chain
-    alt Tool get_order_status with orders:read
-        MCP-->>SPA: 200 OK JSON-RPC result + Record ALLOWED in Agent Activity Timeline
-    else Tool issue_refund without refunds:execute
-        MCP-->>SPA: 403 Forbidden scope_escalation_blocked + WWW-Authenticate insufficient_scope
-    else Tool export_all_users requiring CIBA Step-Up
-        MCP-->>SPA: 403 Forbidden human_approval_required with auth_req_id
-        User->>SPA: Click Approve on CIBA Step-Up Approval Card
-        SPA->>IdP: POST /dev-idp/oauth2/ciba/decide with auth_req_id=APPROVED
-        IdP-->>SPA: Mint One-Time 120s Step-Up OBO Token with human_approval_token and users:export
-        SPA->>MCP: Retry POST /api/mcp tools/call export_all_users with Step-Up Token + Fresh DPoP Proof
-        MCP-->>SPA: 200 OK JSON-RPC result + Consume One-Time Approval Token
+    Client->>APIM: POST /api/integration/orders/ORD-2026-99201/mediate with Bearer JWT
+    APIM->>APIM: RadixRouteTrie lookup in O of k segments + RS256 JWKS verification
+    APIM->>APIM: TokenBucketThrottler O of 1 check for Bronze / Silver / Gold tier
+    APIM->>APIM: DoublyLinkedLruTtlCache O of 1 lookup and mint X-JWT-Assertion
+    APIM->>MI: Forward request with X-JWT-Assertion and X-Correlation-ID
+    MI->>MI: Kahn BFS Topological Sort O of V plus E verifies acyclic mediation DAG
+    MI->>MI: Content-Based Router evaluates amountUsd and region predicates
+    par Clone Branch 1
+        MI->>Services: Invoke OrderCoreService
+    and Clone Branch 2
+        MI->>Services: Invoke WarehouseInventoryService guarded by CircuitBreakerFsm
+    and Clone Branch 3
+        MI->>Services: Invoke FraudRiskScoringService or EuGdprResidencyService
     end
+    alt Upstream Inventory Healthy
+        Services-->>MI: Return SOAP XML branch payloads in parallel
+    else Upstream Inventory Timeout
+        MI->>MI: CircuitBreakerFsm trips CLOSED to OPEN and fails over to Replica
+        MI->>DLQ: Enqueue retry in Binary Min-Heap O of log n with exponential backoff
+    end
+    MI->>MI: Aggregate Mediator correlates responses and PayloadFactory transforms XML to JSON
+    MI-->>APIM: Return Canonical Enterprise JSON
+    APIM->>APIM: Store in DoublyLinkedLruTtlCache MRU head in O of 1
+    APIM-->>Client: 200 OK with X-JWT-Assertion, X-WSO2-Throttle-Tier, and DSA Telemetry
 ```
 
 ---
@@ -164,6 +190,9 @@ sequenceDiagram
 
 | Method | Endpoint | Access Policy | Description |
 | :--- | :--- | :--- | :--- |
+| `POST` | `/api/integration/orders/:orderId/mediate` | `RS256` JWT + `APIM Tier Quota` | **WSO2 APIM + Micro Integrator EIP Pipeline**: Radix Trie route match, Token Bucket tier check, `X-JWT-Assertion` minting, Doubly-Linked LRU cache, Content-Based Router, 3-way Scatter-Gather, `PayloadFactory` XML→JSON transform, Circuit Breaker & Min-Heap DLQ |
+| `GET` | `/api/integration/dsa-telemetry` | Public Demo Telemetry | Live state and Big-O complexity proofs for all 5 Core Data Structures (`RadixRouteTrie`, `DoublyLinkedLruTtlCache`, `TokenBucketThrottler`, `CircuitBreakerFsm`, `MinHeapRetryQueue`, `planMediationDag`) |
+| `POST` | `/api/integration/reset` | Public Demo Control | Resets Token Buckets, Doubly-Linked LRU cache, Circuit Breaker FSM, and Min-Heap Retry Queue |
 | `GET` | `/health` | Public | Resource server & Dev IdP status, active/rotated `kid`, `audience`, and `mcpAudience` |
 | `GET` | `/.well-known/oauth-protected-resource` | Public (`RFC 9728`) | Protected Resource Metadata (`resource`, `authorization_servers`, `scopes_supported`, `dpop_signing_alg_values_supported`) |
 | `GET` | `/api/openapi.json` & `/api/docs` | Public (`OpenAPI 3.1`) | Machine-readable OpenAPI 3.1 specification and interactive Scalar API Reference UI |
@@ -182,13 +211,17 @@ sequenceDiagram
 
 ---
 
-## Architecture Decision Records (ADRs) & Threat Model
+## Deployable WSO2 Artifacts & Architecture Decision Records (ADRs)
 
+- **[WSO2 Micro Integrator Synapse XML Artifact](./integration-artifacts/wso2-mi-synapse/EnterpriseOrderIntegrationAPI.xml)** — Declarative `<api>`, `<filter>`, `<switch>`, `<clone>`, `<aggregate>`, `<payloadFactory>`, and `<store>` Dead-Letter Channel sequence.
+- **[WSO2 API Manager 4.x Declarative Definition (`api.yaml`)](./integration-artifacts/wso2-apim/api.yaml)** — `apictl`-compatible API specification with `Bronze`/`Silver`/`Gold` policies, `backendJwtConfiguration` (`X-JWT-Assertion`), response caching, and failover endpoints.
+- **[WSO2 Ballerina Cloud-Native Service (`order_integration_service.bal`)](./integration-artifacts/ballerina/order_integration_service.bal)** — Ballerina Swan Lake service with declarative JWKS listener auth, HTTP `circuitBreaker`, and concurrent `fork`/`wait` workers.
 - **[STRIDE Threat Model & Control Matrix](./docs/threat-model.md)** — Maps every Attack Lab fault and threat vector to normative RFC sections, middleware guards, and Vitest test names.
 - **[ADR 0001: Stateless RS256 JWKS Verification vs. Stateful RFC 7662 Token Introspection](./docs/adr/0001-stateless-jwks-vs-token-introspection.md)**
 - **[ADR 0002: RFC 8693 On-Behalf-Of (OBO) Token Exchange Over Token Passthrough for MCP Agents](./docs/adr/0002-rfc8693-obo-over-token-passthrough.md)**
 - **[ADR 0003: RFC 9449 DPoP Sender-Constrained Tokens for Delegated AI Agents](./docs/adr/0003-rfc9449-dpop-for-ai-agents.md)**
 - **[ADR 0004: Shared Pure-TypeScript Identity Policy Package & Contract Testing](./docs/adr/0004-shared-identity-policy-package.md)**
+- **[ADR 0005: WSO2 API Manager (APIM 4.x) Gateway Mediation, Micro Integrator EIP Pipeline & Core Data Structures](./docs/adr/0005-wso2-apim-micro-integrator-and-core-dsa.md)**
 
 ---
 
@@ -196,14 +229,24 @@ sequenceDiagram
 
 ```text
 wso2-identity-integration-demo/
+├── integration-artifacts/               # Deployable WSO2 Product Artifacts
+│   ├── wso2-mi-synapse/
+│   │   └── EnterpriseOrderIntegrationAPI.xml # WSO2 Micro Integrator Synapse XML (CBR, Clone/Aggregate, PayloadFactory, DLQ)
+│   ├── wso2-apim/
+│   │   └── api.yaml                          # WSO2 API Manager 4.x apictl declarative definition & X-JWT-Assertion config
+│   └── ballerina/
+│       └── order_integration_service.bal     # WSO2 Ballerina Swan Lake concurrent Scatter-Gather & Circuit Breaker service
 ├── packages/
-│   └── identity-policy/                 # Shared pure-TS policy constants, RBAC matrix & types
+│   └── identity-policy/                 # Shared pure-TS policy constants, RBAC matrix & DSA catalog
 │       ├── src/index.ts
 │       ├── package.json
 │       └── tsconfig.json
 ├── backend/
 │   ├── src/
+│   │   ├── dsa/
+│   │   │   └── integrationDsaEngine.ts       # 5 Core Data Structures (RadixTrie, DoublyLinkedLRU, TokenBucket, FSM+MinHeap, Kahn DAG) + APIM/MI runtime
 │   │   ├── __tests__/
+│   │   │   ├── integrationDsaAndEip.test.ts  # Unit & integration specs for all 5 Data Structures and /api/integration/*
 │   │   │   ├── advancedAgentSecurity.test.ts # CIBA step-up, RFC 9449 DPoP & RFC 7662 introspection specs
 │   │   │   ├── agentPolicy.drift.test.ts     # Frontend/backend constant drift guard
 │   │   │   ├── delegationPolicy.test.ts      # RFC 8693 §4.1 nested act & §4.4 may_act unit tests
@@ -212,61 +255,43 @@ wso2-identity-integration-demo/
 │   │   │   ├── policyContract.test.ts        # Full-matrix contract test (Shared Policy vs Express)
 │   │   │   └── security.test.ts              # RS256 pinning, typed errors, RFC 6750 headers & audience isolation
 │   │   ├── config/
-│   │   │   ├── agentPolicy.ts                # Canonical 60s TTL & max delegation depth constants
-│   │   │   └── identityConfig.ts             # Strict environment loader (Dev IdP, WSO2 IS & Asgardeo)
 │   │   ├── devIdp/
-│   │   │   ├── devIdpRouter.ts               # OIDC Discovery, JWKS, PKCE S256, RFC 8693 STS, CIBA & Revocation
-│   │   │   ├── keyStore.ts                   # RSA-2048 active/rotated key manager with jose
-│   │   │   └── personas.ts                   # Seeded developer, admin & auditor personas with may_act
 │   │   ├── mcp/
-│   │   │   ├── auditLog.ts                   # In-memory ring buffer for Agent Activity Timeline
-│   │   │   ├── cibaStore.ts                  # One-time CIBA step-up approval state manager
-│   │   │   └── toolRegistry.ts               # Declarative MCP tool schemas, risk tiers & policy evaluator
 │   │   ├── middleware/
-│   │   │   ├── authMiddleware.ts             # Stateless RS256 pinning, JWKS LRU cache & introspection toggle
-│   │   │   ├── bearerChallenge.ts            # RFC 6750 + RFC 9728 WWW-Authenticate header builder
-│   │   │   ├── delegationPolicy.ts           # Iterative act chain & may_act policy evaluators
-│   │   │   ├── dpopMiddleware.ts             # RFC 9449 ES256 DPoP proof & jti replay verifier
-│   │   │   ├── jwtRejection.ts               # Typed instanceof JWT error classification & DefenseTrace
-│   │   │   ├── rateLimitAndLogger.ts         # Sliding-window rate limiter & X-Request-Id structured logger
-│   │   │   └── rbacMiddleware.ts             # requireRoles, requireScopes & requireAgentDelegation
 │   │   ├── routes/
 │   │   │   ├── apiRoutes.ts                  # Public, authenticated, RBAC & scope-protected REST routes
+│   │   │   ├── integrationRoutes.ts          # WSO2 APIM Gateway + Micro Integrator EIP & Core DSA Telemetry endpoints
 │   │   │   ├── mcpRoutes.ts                  # JSON-RPC 2.0 MCP Gateway & audit log route
 │   │   │   └── openApiSpec.ts                # OpenAPI 3.1 spec generator & Scalar API Reference UI
 │   │   ├── types/
-│   │   │   └── auth.ts                       # Discriminated unions, ActorClaim & DefenseTrace types
 │   │   └── server.ts                         # Hardened Express bootstrap
 │   └── Dockerfile
 ├── frontend/
 │   ├── src/
 │   │   ├── __tests__/
+│   │   │   ├── integrationDsaEngine.test.ts  # Frontend APIM/MI simulation & Synapse XML / Ballerina exporter tests
 │   │   │   ├── flowAndState.test.ts          # ConsoleReducer, StageDescriptors, DPoP, CIBA & Exporter tests
 │   │   │   └── security.test.ts              # RFC 7636 S256 vector & Web Crypto RS256 verification suite
 │   │   ├── components/
 │   │   │   ├── flow/
-│   │   │   │   ├── FlowCanvas.tsx            # Accessible 5/6-stage SVG pipeline graph
-│   │   │   │   ├── McpToolStrip.tsx          # Stage 06 MCP tools, CIBA approval card & audit timeline
-│   │   │   │   ├── StageInspector.tsx        # Synchronized stage inspector & Stage 04 JWKS/Introspection toggle
-│   │   │   │   ├── StageNode.tsx             # Memoized keyboard-navigable SVG node
-│   │   │   │   └── stageDescriptors.ts       # Pure stage descriptor builder functions
+│   │   │   ├── IntegrationWorkbench.tsx      # Interactive WSO2 APIM + Micro Integrator EIP + 5-Structure Core DSA Workbench
 │   │   │   ├── ApiTestBench.tsx
 │   │   │   ├── AttackLabPanel.tsx            # 10-scenario interactive Break-the-Flow Attack Lab
 │   │   │   ├── AuthSessionCard.tsx           # WSO2 IS / Asgardeo preset switcher & 3 seeded personas
-│   │   │   ├── CodeExporterDrawer.tsx
+│   │   │   ├── CodeExporterDrawer.tsx        # Exports curl, TypeScript, OIDC JSON, WSO2 MI Synapse XML & Ballerina (.bal)
 │   │   │   ├── CommandPalette.tsx
 │   │   │   ├── JsonHighlighter.tsx
 │   │   │   ├── JwtClaimsInspector.tsx
-│   │   │   ├── OidcFlowVisualizer.tsx        # Modular flow orchestrator
+│   │   │   ├── OidcFlowVisualizer.tsx
 │   │   │   └── TokenTtlBadge.tsx
 │   │   ├── lib/
-│   │   │   ├── agentPolicy.ts                # Mirrored 60s TTL & max depth constants (drift-guarded)
-│   │   │   ├── apiClient.ts                  # Live Dev IdP / JSON-RPC client & Web Crypto verified simulator
-│   │   │   ├── browserCrypto.ts              # Web Crypto RSASSA-PKCS1-v1_5 & ECDSA P-256 signing/verification
-│   │   │   ├── pkce.ts                       # Web Crypto S256 PKCE, JWT parser & Simulated STS minter
-│   │   │   └── securityLab.ts                # 10 Attack Lab fault evaluators & JSON-RPC code generator
+│   │   │   ├── integrationDsaEngine.ts       # Browser-side Core DSA & WSO2 APIM/MI EIP engine for GitHub Pages parity
+│   │   │   ├── agentPolicy.ts
+│   │   │   ├── apiClient.ts
+│   │   │   ├── browserCrypto.ts
+│   │   │   ├── pkce.ts
+│   │   │   └── securityLab.ts
 │   │   ├── state/
-│   │   │   └── consoleReducer.ts             # Pure useReducer state machine & ConsoleContext
 │   │   └── App.tsx
 │   └── Dockerfile
 ├── e2e/
@@ -275,13 +300,10 @@ wso2-identity-integration-demo/
 │   ├── docker-compose.yml                    # --profile dev (fast full stack) & --profile wso2 (IS 7.0 + DCR)
 │   └── wso2-bootstrap.sh                     # Automated WSO2 IS 7.0 DCR & SCIM2 bootstrap script
 ├── docs/
-│   ├── adr/                                  # 4 Architecture Decision Records
+│   ├── adr/                                  # 5 Architecture Decision Records (including ADR 0005 for APIM/MI & Core DSA)
 │   ├── screenshots/                          # UI showcase captures
 │   ├── threat-model.md                       # STRIDE threat-to-control matrix
 │   └── wso2-setup-guide.md
-├── .github/
-│   ├── dependabot.yml
-│   └── workflows/                            # ci.yml, deploy.yml (GitHub Pages), codeql.yml
 ├── CHANGELOG.md
 ├── SECURITY.md
 ├── playwright.config.ts
